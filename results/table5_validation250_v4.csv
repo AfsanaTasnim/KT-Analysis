@@ -1,0 +1,10 @@
+Pattern,Ref +,KT +,TP,FP,FN,Precision,Recall,F1
+Training Pipeline,4.0,2.0,2.0,0.0,2.0,1.0,0.5,0.667
+Interactive Inference,35.0,45.0,22.0,23.0,13.0,0.489,0.629,0.55
+Advanced Sampling,10.0,12.0,6.0,6.0,4.0,0.5,0.6,0.545
+Model Loading and Validation,22.0,23.0,10.0,13.0,12.0,0.435,0.455,0.444
+Memory Management,25.0,24.0,14.0,10.0,11.0,0.583,0.56,0.571
+Context Management,31.0,32.0,16.0,16.0,15.0,0.5,0.516,0.508
+Quantization Workflow,7.0,5.0,4.0,1.0,3.0,0.8,0.571,0.667
+Macro Average,,,,,,0.615,0.547,0.565
+Micro Average,,,74.0,69.0,60.0,0.517,0.552,0.534

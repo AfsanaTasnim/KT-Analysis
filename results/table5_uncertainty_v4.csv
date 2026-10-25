@@ -1,0 +1,4 @@
+set,n,macro_f1,macro_ci_lo,macro_ci_hi,micro_f1,micro_ci_lo,micro_ci_hi,exact_agreement
+validation250,250,0.565,0.427,0.651,0.534,0.464,0.603,145
+holdout80,80,0.386,0.279,0.571,0.454,0.346,0.545,36
+pooled330,330,0.526,0.411,0.608,0.513,0.456,0.57,181

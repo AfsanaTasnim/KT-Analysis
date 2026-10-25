@@ -1,0 +1,16 @@
+{
+  "name": "kaizentracer",
+  "version": "0.1.0",
+  "dependencies": [
+    {
+      "name": "llvm",
+      "default-features": false,
+      "features": [
+        "clang",
+        "clang-tools-extra",
+        "enable-rtti",
+        "target-x86"
+      ]
+    }
+  ]
+}

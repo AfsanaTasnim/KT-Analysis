@@ -1,0 +1,11 @@
+project,mode,source_files,parsed_files,functions,cfgs,files_with_errors,parse_rate
+llama.cpp,compile_db,330,325,4846,4823,0,98.5
+gemma.cpp,compile_db,38,33,373,373,1,86.8
+onnxruntime-genai,glob,145,128,1717,1700,132,88.3
+openvino.genai,glob,281,252,2272,2249,273,89.7
+lmdeploy,glob,78,77,835,829,78,98.7
+gpt2.cpp,glob,1,1,5,4,1,100.0
+minchatgpt.cpp,glob,3,3,37,37,0,100.0
+InferLLM,compile_db,22,22,306,306,21,100.0
+sglang,glob,52,51,425,254,49,98.1
+DeepSpeed-FastGen,glob,70,67,441,380,70,95.7

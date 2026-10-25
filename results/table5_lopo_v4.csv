@@ -1,0 +1,12 @@
+Held-out Repository,Test Functions,Patterns,Macro F1,Micro F1,Precision,Recall
+DeepSpeed-FastGen,283.0,7.0,0.076,0.102,0.081,0.139
+InferLLM,149.0,6.0,0.129,0.161,0.162,0.16
+gemma.cpp,335.0,7.0,0.103,0.169,0.138,0.219
+gpt2.cpp,3.0,1.0,0.0,0.0,0.0,0.0
+llama.cpp,3577.0,7.0,0.172,0.274,0.235,0.329
+lmdeploy,647.0,7.0,0.119,0.191,0.147,0.272
+minchatgpt.cpp,30.0,5.0,0.202,0.318,0.292,0.35
+onnxruntime-genai,1290.0,6.0,0.134,0.189,0.229,0.161
+openvino.genai,1699.0,6.0,0.115,0.166,0.176,0.156
+sglang,217.0,6.0,0.072,0.102,0.086,0.125
+Average,,,0.112,0.167,,

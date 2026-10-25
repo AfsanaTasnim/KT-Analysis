@@ -1,0 +1,11 @@
+project,Training Pipeline,Interactive Inference,Advanced Sampling,Model Loading and Validation,Memory Management,Context Management,Quantization Workflow,Dominant Pattern,Dominant Share,Uncovered
+DeepSpeed-FastGen,31,25,6,11,36,11,24,Memory Management,8.2,70.1
+InferLLM,0,18,7,47,23,2,10,Model Loading and Validation,29.2,45.3
+gemma.cpp,4,61,11,29,19,31,3,Interactive Inference,16.4,66.5
+gpt2.cpp,0,1,0,0,0,0,0,Interactive Inference,20.0,80.0
+llama.cpp,43,1267,318,923,394,371,126,Interactive Inference,26.2,51.9
+lmdeploy,2,85,10,42,63,63,5,Interactive Inference,10.2,72.0
+minchatgpt.cpp,0,17,2,1,1,0,1,Interactive Inference,45.9,48.6
+onnxruntime-genai,0,315,149,98,176,254,2,Interactive Inference,18.3,57.1
+openvino.genai,0,463,62,102,93,176,5,Interactive Inference,20.4,66.6
+sglang,0,19,11,18,12,19,18,Interactive Inference,4.5,80.5

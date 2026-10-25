@@ -1,0 +1,3384 @@
+id,project,file,function,start_line,source
+1,llama.cpp,repos/llama.cpp/ggml/src/gguf.cpp,gguf_init_empty,421,"struct gguf_context * gguf_init_empty(void) {
+    return new gguf_context;
+}
+
+template<typename T>
+bool gguf_read_emplace_helper(const struct gguf_reader & gr, std::vector<struct gguf_kv> & kv, const std::string & key, const bool is_array, const size_t n) {
+    if (is_array) {
+        std::vector<T> value;
+        try {
+            if (!gr.read(value, n)) {
+                return false;
+            }
+        } catch (std::length_error &) {
+            GGML_LOG_ERROR(""%s: encountered length_error while reading value for key '%s'\n"", __func__, key.c_str());
+            return false;
+        } catch (std::bad_alloc &) {
+            GGML_LOG_ERROR(""%s: encountered bad_alloc error while reading value for key '%s'\n"", __func__, key.c_str());
+            return false;
+        }
+        kv.emplace_back(key, value);
+    } else {
+        T value;
+        if (!gr.read(value)) {
+            return false;
+        }
+        kv.emplace_back(key, value);
+    }
+    return true;
+}
+
+static struct gguf_context * gguf_init_from_reader(const struct gguf_reader & gr, struct gguf_init_params params) {
+    struct gguf_context * ctx = new gguf_context;
+
+    bool ok = true;
+
+    // file magic
+    {
+        std::vector<char> magic;
+        ok = ok && gr.read(magic, 4);
+
+        if (!ok) {
+            GGML_LOG_ERROR(""%s: failed to read magic\n"", __func__);
+            gguf_free(ctx);
+            return nullptr;
+        }"
+2,openvino.genai,repos/openvino-genai/openvino.genai-master/src/cpp/src/visual_language/embedding_model.cpp,ov::genai::EmbeddingsModel::EmbeddingsModel,58,"EmbeddingsModel::EmbeddingsModel(const std::string& model,
+                                 const ov::Tensor& weights,
+                                 const float scale_emb,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    ov::Core core = utils::singleton_core();
+    std::shared_ptr<ov::Model> m_model = core.read_model(model, weights);
+    // apply embedding postprocessing step by merging them into the model
+    merge_postprocess(m_model, scale_emb);
+
+    ov::CompiledModel compiled_model = core.compile_model(
+        m_model, device, utils::get_model_properties(properties, ""text_embeddings"", device));
+    m_embeddings_requests_queue = init(compiled_model);
+}
+
+std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& EmbeddingsModel::get_request_queue() {
+    return this->m_embeddings_requests_queue;
+}
+
+ov::Tensor EmbeddingsModel::infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor) {
+    OPENVINO_ASSERT(req.ireq, ""Text embeddings decoder model must be compiled first. Cannot infer non-compiled model"");
+    req.ireq.set_input_tensor(input_idx);
+    if (return_remote_tensor) {
+        req.ireq.set_output_tensor(req.remote_tensor);
+    } else {
+        req.ireq.set_output_tensor(req.cpu_tensor);
+    }
+    req.ireq.infer();
+    return req.ireq.get_output_tensor();
+}
+
+void EmbeddingsModel::merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const {
+    ov::preprocess::PrePostProcessor ppp(model);
+
+    ppp.output().postprocess().custom([scale_emb](const ov::Output<ov::Node>& node) {
+        auto constant = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, scale_emb);
+        return std::make_shared<ov::op::v1::Multiply>(node, constant);
+    });
+
+    ppp.build();
+}
+
+} // namespace genai
+} // namespace ov"
+3,openvino.genai,repos/openvino-genai/openvino.genai-master/src/python/py_utils.cpp,ov::genai::pybind::utils::kwargs_to_any_map,525,"ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
+    ov::AnyMap params = {};
+
+    for (const auto& item : kwargs) {
+        std::string key = py::cast<std::string>(item.first);
+        py::object value = py::cast<py::object>(item.second);
+        // we need to unpack only dictionaries, which are passed with ""config"" name,
+        // because there are dictionary properties that should not be unpacked
+        if (utils::py_object_is_any_map(value) && key == ""config"") {
+            auto map = utils::py_object_to_any_map(value);
+            params.insert(map.begin(), map.end());
+        } else if (py::isinstance<ov::genai::StructuredOutputConfig>(value)) {
+            params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
+        } else if (value.is_none() && key == ""taylorseer_config"") {
+            params[key] = ov::Any{};
+        } else {
+            OPENVINO_ASSERT(!value.is_none(), ""Property \"""", key, ""\"" can't be None."");
+            params[key] = utils::py_object_to_any(value, key);
+        }
+    }
+    return params;
+}
+
+std::filesystem::path ov_tokenizers_module_path() {
+    // Try a path relative to build artifacts folder first.
+    std::filesystem::path from_relative = tokenizers_relative_to_genai();
+    if (std::filesystem::exists(from_relative)) {
+        return from_relative;
+    }
+    return py::module_::import(""openvino_tokenizers"").attr(""_ext_path"").cast<std::filesystem::path>();
+}
+
+ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer) {
+    ov::genai::StreamerVariant streamer = std::monostate();
+
+    std::visit(overloaded{[&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback) {
+                              auto shared_callback = std::shared_ptr<std::function<std::optional<uint16_t>(py::str)>>(
+                                  new std::function<std::optional<uint16_t>(py::str)>(py_callback),
+                                  [](std::function<std::optional<uint16_t>(py::str)>* f) {
+                                      if (Py_IsInitialized()) {
+                                          py::gil_scoped_acquire acquire;
+                                          delete f;
+                                      } else {
+                                          delete f;
+                                      }"
+4,llama.cpp,repos/llama.cpp/src/llama-vocab.cpp,llama_vocab_get_attr,4216,"enum llama_token_attr llama_vocab_get_attr(const struct llama_vocab * vocab, llama_token token) {
+    return vocab->token_get_attr(token);
+}
+
+bool llama_vocab_is_eog(const struct llama_vocab * vocab, llama_token token) {
+    return vocab->is_eog(token);
+}
+
+bool llama_vocab_is_control(const struct llama_vocab * vocab, llama_token token) {
+    return vocab->is_control(token);
+}
+
+llama_token llama_vocab_bos(const struct llama_vocab * vocab) {
+    return vocab->token_bos();
+}
+
+llama_token llama_vocab_eos(const struct llama_vocab * vocab) {
+    return vocab->token_eos();
+}
+
+llama_token llama_vocab_eot(const struct llama_vocab * vocab) {
+    return vocab->token_eot();
+}
+
+// deprecated
+llama_token llama_vocab_cls(const struct llama_vocab * vocab) {
+    return vocab->token_bos();
+}
+
+llama_token llama_vocab_sep(const struct llama_vocab * vocab) {
+    return vocab->token_sep();
+}
+
+llama_token llama_vocab_nl (const struct llama_vocab * vocab) {
+    return vocab->token_nl();
+}
+
+llama_token llama_vocab_pad(const struct llama_vocab * vocab) {
+    return vocab->token_pad();
+}
+
+bool llama_vocab_get_add_bos(const struct llama_vocab * vocab) {
+    return vocab->get_add_bos();
+}"
+5,llama.cpp,repos/llama.cpp/src/models/qwen3vl.cpp,llama_model_qwen3vl::build_arch_graph,55,"std::unique_ptr<llm_graph_context> llama_model_qwen3vl::build_arch_graph(const llm_graph_params & params) const {
+    return std::make_unique<graph>(*this, params);
+}
+
+llama_model_qwen3vl::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    const size_t n_deepstack_layers = hparams.n_deepstack_layers;
+
+    const int64_t n_embd      = hparams.n_embd;
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(n_embd_head == n_rot);
+
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    int sections[4];
+    std::copy(std::begin(hparams.rope_sections), std::begin(hparams.rope_sections) + 4, sections);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = build_inp_pos();
+
+    auto * inp_attn = build_attn_inp_kv();
+
+    ggml_tensor * inp_out_ids = build_inp_out_ids();
+
+    for (int il = 0; il < n_layer; ++il) {
+        ggml_tensor * inpSA = inpL;
+
+        // norm
+        cur = build_norm(inpL,
+                model.layers[il].attn_norm, NULL,
+                LLM_NORM_RMS, il);
+        cb(cur, ""attn_norm"", il);
+
+        // self-attention
+        {
+            // compute Q and K and RoPE them
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
+
+            Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
+            cb(Qcur, ""Qcur_normed"", il);"
+6,llama.cpp,repos/llama.cpp/ggml/src/gguf.cpp,gguf_reader::tell,364,"    uint64_t tell() const {
+        return data_offset;
+    }
+
+    bool seek(uint64_t absolute_offset) const {
+        const uint64_t end_offset = uint64_t(data_offset) + nbytes_remain;
+        if (absolute_offset > end_offset) {
+            return false;
+        }
+
+        data_offset = absolute_offset;
+        nbytes_remain = end_offset - absolute_offset;
+
+        return true;
+    }
+
+private:
+    size_t read_raw(void * dst, size_t size) const {
+        if (callback == nullptr || size == 0) {
+            return 0;
+        }
+
+        uint8_t * data = static_cast<uint8_t *>(dst);
+        size_t total_nread = 0;
+        bool reached_eof = false;
+
+        while (total_nread < size) {
+            const size_t chunk_size = std::min(max_chunk_read, size - total_nread);
+            if (data_offset + total_nread < data_offset) {
+                break;
+            }
+            const size_t nread = callback(userdata, static_cast<void *>(data + total_nread), data_offset + total_nread, chunk_size);
+            total_nread += nread;
+            if (nread != chunk_size) {
+                reached_eof = true;
+                break;
+            }
+        }
+
+        data_offset += total_nread;
+        GGML_ASSERT(total_nread <= nbytes_remain);
+        nbytes_remain -= total_nread;
+
+        if (reached_eof) {
+            nbytes_remain = 0;"
+7,llama.cpp,repos/llama.cpp/tools/llama-bench/llama-bench.cpp,test::get_map,1677,"    std::map<std::string, std::string> get_map() const {
+        std::map<std::string, std::string> map;
+        auto                               fields = get_fields();
+        auto                               values = get_values();
+        std::transform(fields.begin(), fields.end(), values.begin(), std::inserter(map, map.end()),
+                       std::make_pair<const std::string &, const std::string &>);
+        return map;
+    }
+};
+
+const std::string test::build_commit = llama_commit();
+const int         test::build_number = llama_build_number();
+
+struct printer {
+    virtual ~printer() {}
+
+    FILE * fout;
+
+    virtual void print_header(const cmd_params & params) { (void) params; }
+
+    virtual void print_test(const test & t) = 0;
+
+    virtual void print_footer() {}
+};
+
+struct csv_printer : public printer {
+    static std::string escape_csv(const std::string & field) {
+        std::string escaped = ""\"""";
+        for (auto c : field) {
+            if (c == '""') {
+                escaped += ""\"""";
+            }
+            escaped += c;
+        }
+        escaped += ""\"""";
+        return escaped;
+    }
+
+    void print_header(const cmd_params & params) override {
+        std::vector<std::string> fields = test::get_fields();
+        fprintf(fout, ""%s\n"", join(fields, "","").c_str());
+        (void) params;
+    }
+
+    void print_test(const test & t) override {"
+8,llama.cpp,repos/llama.cpp/ggml/src/gguf.cpp,gguf_writer_base::write,1465,"    void write(const char * val) {
+        write(std::string(val));
+    }
+
+    void write(const enum ggml_type & val) {
+        write(int32_t(val));
+    }
+
+    void write(const enum gguf_type & val) {
+        write(int32_t(val));
+    }
+
+    void write(const struct gguf_kv & kv) {
+        const uint64_t ne = kv.get_ne();
+
+        write(kv.get_key());
+
+        if (kv.is_array) {
+            write(GGUF_TYPE_ARRAY);
+            write(kv.get_type());
+            write(ne);
+        } else {
+            write(kv.get_type());
+        }
+
+        switch (kv.get_type()) {
+            case GGUF_TYPE_UINT8:
+            case GGUF_TYPE_INT8:
+            case GGUF_TYPE_UINT16:
+            case GGUF_TYPE_INT16:
+            case GGUF_TYPE_UINT32:
+            case GGUF_TYPE_INT32:
+            case GGUF_TYPE_FLOAT32:
+            case GGUF_TYPE_UINT64:
+            case GGUF_TYPE_INT64:
+            case GGUF_TYPE_FLOAT64: {
+                write(kv.data);
+            } break;
+            case GGUF_TYPE_BOOL: {
+                for (size_t i = 0; i < ne; ++i) {
+                    write(kv.get_val<bool>(i));
+                }
+            } break;
+            case GGUF_TYPE_STRING: {
+                for (size_t i = 0; i < ne; ++i) {"
+9,openvino.genai,repos/openvino-genai/openvino.genai-master/src/cpp/src/llm/pipeline.cpp,(anonymous namespace)::run_generate_with_parsers,59,"ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
+                 const ov::genai::StreamerVariant& streamer,
+                std::function<ov::genai::DecodedResults(void)> generate_callable) {
+                    
+    std::shared_ptr<ov::genai::TextParserStreamer> parser_streamer;
+    // If streamer is of StreamerBase type, and it is TextParserStreamer, get parsed message
+    // Streaming is available only for batch size 1 therefore only parsed[0]
+    if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
+        parser_streamer = std::dynamic_pointer_cast<ov::genai::TextParserStreamer>(*streamer_obj);
+    }
+
+    // determine from generation config when 'need_to_reset_parser' will be available
+    // TODO: Determine 'need_to_reset_parser' from generation_config when available.
+    bool need_to_reset_parser = true;
+    if (parser_streamer && need_to_reset_parser) {
+        parser_streamer->reset();
+    }
+
+    auto res = generate_callable();
+    
+    if (parser_streamer) {
+        res.parsed.resize(1);
+        res.parsed[0] = parser_streamer->get_parsed_message();
+    }
+
+    // If no parsers are defined, return
+    if (!generation_config.has_value() || generation_config->parsers.empty()) {
+        return res;
+    }
+    
+    std::vector<std::shared_ptr<ov::genai::Parser>> parsers = generation_config->parsers;
+    res.parsed.resize(res.texts.size());
+    
+    // Apply Base parsers sequentially even if IncrementalParser has run.
+    for (size_t i = 0; i < res.texts.size(); ++i) {
+        auto& msg = res.parsed[i];
+        if (!msg.contains(""content"")) {
+            // Initialize msg with content
+            msg[""content""] = res.texts[i];
+        }
+        
+        for (auto& parser: parsers) {
+            parser->parse(msg);
+        }
+        res.parsed[i] = msg;"
+10,llama.cpp,repos/llama.cpp/src/llama-vocab.cpp,llama_vocab::token_to_piece,4153,"const std::string & llama_vocab::token_to_piece(llama_token token) const {
+    return pimpl->token_to_piece(token);
+}
+
+int32_t llama_vocab::token_to_piece(llama_token token, char * buf, int32_t length, int32_t lstrip, bool special) const {
+    return pimpl->token_to_piece(token, buf, length, lstrip, special);
+}
+
+int32_t llama_vocab::detokenize(
+               const llama_token * tokens,
+                         int32_t   n_tokens,
+                            char * text,
+                         int32_t   text_len_max,
+                            bool   remove_special,
+                            bool   unparse_special) const {
+    return pimpl->detokenize(tokens, n_tokens, text, text_len_max, remove_special, unparse_special);
+}
+
+std::string llama_vocab::detokenize(const std::vector<llama_token> & tokens, bool special) const {
+    std::string text;
+    text.resize(std::max(text.capacity(), tokens.size()));
+    int32_t n_chars = detokenize(tokens.data(), (int32_t)tokens.size(), &text[0], (int32_t)text.size(), false, special);
+    if (n_chars < 0) {
+        text.resize(-n_chars);
+        n_chars = detokenize(tokens.data(), (int32_t)tokens.size(), &text[0], (int32_t)text.size(), false, special);
+        GGML_ASSERT(n_chars <= (int32_t)text.size());  // whitespace trimming is performed after per-token detokenization
+    }
+
+    text.resize(n_chars);
+
+    // NOTE: the original tokenizer decodes bytes after collecting the pieces.
+    return text;
+}
+
+void llama_vocab::print_info() const {
+    pimpl->print_info();
+}
+
+//
+// interface implementation
+//
+
+int32_t llama_vocab_n_tokens(const struct llama_vocab * vocab) {
+    return vocab->n_tokens();
+}"
+11,llama.cpp,repos/llama.cpp/src/llama-kv-cache-msa.cpp,llama_kv_cache_msa::clear,52,"void llama_kv_cache_msa::clear(bool data) {
+    kv_base->clear(data);
+    kv_idx ->clear(data);
+}
+
+bool llama_kv_cache_msa::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
+    bool res = true;
+
+    res = res & kv_base->seq_rm(seq_id, p0, p1);
+    res = res & kv_idx ->seq_rm(seq_id, p0, p1);
+
+    return res;
+}
+
+void llama_kv_cache_msa::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1) {
+    kv_base->seq_cp(seq_id_src, seq_id_dst, p0, p1);
+    kv_idx ->seq_cp(seq_id_src, seq_id_dst, p0, p1);
+}
+
+void llama_kv_cache_msa::seq_keep(llama_seq_id seq_id) {
+    kv_base->seq_keep(seq_id);
+    kv_idx ->seq_keep(seq_id);
+}
+
+void llama_kv_cache_msa::seq_add(llama_seq_id seq_id, llama_pos p0, llama_pos p1, llama_pos shift) {
+    kv_base->seq_add(seq_id, p0, p1, shift);
+    kv_idx ->seq_add(seq_id, p0, p1, shift);
+}
+
+void llama_kv_cache_msa::seq_div(llama_seq_id seq_id, llama_pos p0, llama_pos p1, int d) {
+    kv_base->seq_div(seq_id, p0, p1, d);
+    kv_idx ->seq_div(seq_id, p0, p1, d);
+}
+
+llama_pos llama_kv_cache_msa::seq_pos_min(llama_seq_id seq_id) const {
+    return kv_base->seq_pos_min(seq_id);
+}
+
+llama_pos llama_kv_cache_msa::seq_pos_max(llama_seq_id seq_id) const {
+    return kv_base->seq_pos_max(seq_id);
+}
+
+std::map<ggml_backend_buffer_type_t, size_t> llama_kv_cache_msa::memory_breakdown() const {
+    std::map<ggml_backend_buffer_type_t, size_t> mb = kv_base->memory_breakdown();
+    for (const auto & buft_size : kv_idx->memory_breakdown()) {"
+12,llama.cpp,repos/llama.cpp/ggml/src/ggml-cpu/unary-ops.cpp,ggml_compute_forward_softplus,305,"void ggml_compute_forward_softplus(const ggml_compute_params * params, ggml_tensor * dst) {
+    unary_op<op_softplus>(params, dst);
+}
+
+void ggml_compute_forward_floor(const ggml_compute_params * params, ggml_tensor * dst) {
+    unary_op<op_floor>(params, dst);
+}
+
+void ggml_compute_forward_ceil(const ggml_compute_params * params, ggml_tensor * dst) {
+    unary_op<op_ceil>(params, dst);
+}
+
+void ggml_compute_forward_round(const ggml_compute_params * params, ggml_tensor * dst) {
+    unary_op<op_round>(params, dst);
+}
+
+void ggml_compute_forward_trunc(const ggml_compute_params * params, ggml_tensor * dst) {
+    unary_op<op_trunc>(params, dst);
+}
+
+void ggml_compute_forward_xielu(const ggml_compute_params * params, ggml_tensor * dst) {
+    const float alpha_n = ggml_get_op_params_f32(dst, 1);
+    const float alpha_p = ggml_get_op_params_f32(dst, 2);
+    const float beta = ggml_get_op_params_f32(dst, 3);
+    const float eps = ggml_get_op_params_f32(dst, 4);
+
+    const auto xielu_op_params = [alpha_n, alpha_p, beta, eps](float f) {
+        return op_xielu(f, alpha_n, alpha_p, beta, eps);
+    };
+
+    unary_op_functor(params, dst, xielu_op_params);
+}"
+13,llama.cpp,repos/llama.cpp/common/speculative.cpp,create_state_ngram_cache,2154,"static common_speculative_impl_ngram_cache create_state_ngram_cache(
+        const common_speculative_config & config,
+        uint32_t n_seq,
+        const std::string & path_static,
+        const std::string & path_dynamic) {
+    uint16_t n_draft = 8; // TODO get from config?
+
+    // TODO bool param in common/common.h to set save_static/save_dynamic?
+    bool save_static = false;
+    bool save_dynamic = false;
+
+    common_speculative_impl_ngram_cache state(config.params, n_seq, n_draft, path_static, path_dynamic, save_static, save_dynamic);
+
+    return state;
+}
+
+std::string common_speculative_type_name_str(const std::vector<common_speculative_type> & types) {
+    std::string result;
+
+    for (size_t i = 0; i < types.size(); i++) {
+        if (i > 0) {
+            result += "","";
+        }
+        result += common_speculative_type_to_str(types[i]);
+    }
+    return result;
+}
+
+const char * common_speculative_all_types_str() {
+    static std::string all_types_str = []() {
+        std::vector<common_speculative_type> types;
+        types.reserve(COMMON_SPECULATIVE_TYPE_COUNT);
+        for (int i = 0; i < COMMON_SPECULATIVE_TYPE_COUNT; i++) {
+            types.push_back((common_speculative_type) i);
+        }
+        return common_speculative_type_name_str(types);
+    }();
+    return all_types_str.c_str();
+}
+
+std::string common_speculative_type_to_str(common_speculative_type type) {
+    switch (type) {
+        case COMMON_SPECULATIVE_TYPE_NONE:          return ""none"";
+        case COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE:  return ""draft-simple"";
+        case COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3:  return ""draft-eagle3"";"
+14,llama.cpp,repos/llama.cpp/ggml/src/gguf.cpp,gguf_writer_base::write_tensor_meta,1518,"    void write_tensor_meta(const struct gguf_tensor_info & info) {
+        write(info.t.name);
+
+        const uint32_t n_dims = ggml_n_dims(&info.t);
+        write(n_dims);
+
+        for (uint32_t j = 0; j < n_dims; ++j) {
+            write(info.t.ne[j]);
+        }
+        write(info.t.type);
+        write(info.offset);
+    }
+
+    void pad(const size_t alignment) {
+        while (written_bytes % alignment != 0) {
+            const int8_t zero = 0;
+            write(zero);
+        }
+    }
+};
+
+// vector buffer based writer
+struct gguf_writer_buf final : public gguf_writer_base {
+    std::vector<int8_t> & buf;
+
+    gguf_writer_buf(std::vector<int8_t> & buf) : buf(buf) {}
+
+    using gguf_writer_base::write;
+
+    void write(const int8_t val) override {
+        buf.push_back(val);
+        written_bytes++;
+    }
+
+    void write(const std::vector<int8_t> & val) override {
+        buf.insert(buf.end(), val.begin(), val.end());
+        written_bytes += val.size();
+    }
+
+    void write_tensor_data(const struct gguf_tensor_info & info, const size_t offset_data, const size_t alignment) override {
+        GGML_ASSERT(buf.size() - offset_data == info.offset);
+
+        GGML_ASSERT(ggml_is_contiguous(&info.t));
+        const size_t offset = buf.size();
+        const size_t nbytes = ggml_nbytes(&info.t);"
+15,llama.cpp,repos/llama.cpp/src/llama-context.cpp,llama_state_seq_get_data,4075,"size_t llama_state_seq_get_data(llama_context * ctx, uint8_t * dst, size_t size, llama_seq_id seq_id) {
+    return llama_state_seq_get_data_ext(ctx, dst, size, seq_id, 0);
+}
+
+size_t llama_state_seq_set_data(llama_context * ctx, const uint8_t * src, size_t size, llama_seq_id seq_id) {
+    return llama_state_seq_set_data_ext(ctx, src, size, seq_id, 0);
+}
+
+size_t llama_state_seq_get_size_ext(llama_context * ctx, llama_seq_id seq_id, llama_state_seq_flags flags) {
+    return ctx->state_seq_get_size(seq_id, flags);
+}
+
+size_t llama_state_seq_get_data_ext(llama_context * ctx, uint8_t * dst, size_t size, llama_seq_id seq_id, llama_state_seq_flags flags) {
+    ctx->synchronize();
+
+    return ctx->state_seq_get_data(seq_id, dst, size, flags);
+}
+size_t llama_state_seq_set_data_ext(llama_context * ctx, const uint8_t * src, size_t size, llama_seq_id seq_id, llama_state_seq_flags flags) {
+    ctx->synchronize();
+
+    return ctx->state_seq_set_data(seq_id, src, size, flags);
+}
+
+size_t llama_state_seq_save_file(llama_context * ctx, const char * filepath, llama_seq_id seq_id, const llama_token * tokens, size_t n_token_count) {
+    ctx->synchronize();
+
+    try {
+        return ctx->state_seq_save_file(seq_id, filepath, tokens, n_token_count);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR(""%s: error saving sequence state file: %s\n"", __func__, err.what());
+        return 0;
+    }
+}
+
+size_t llama_state_seq_load_file(llama_context * ctx, const char * filepath, llama_seq_id dest_seq_id, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {
+    ctx->synchronize();
+
+    try {
+        return ctx->state_seq_load_file(dest_seq_id, filepath, tokens_out, n_token_capacity, n_token_count_out);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR(""%s: error loading sequence state file: %s\n"", __func__, err.what());
+        return 0;
+    }
+}"
+16,gemma.cpp,repos/gemma.cpp/gemma/configs.cc,gcpp::ConfigGemma3_270M,415,"static ModelConfig ConfigGemma3_270M() {
+  ModelConfig config = ConfigBaseGemmaV3();
+  config.display_name = ""Gemma3_270M"";
+  config.model = Model::GEMMA3_270M;
+  config.wrapping = PromptWrapping::GEMMA_IT;
+  config.model_dim = 640;
+  config.vocab_size = kGemmaV3VocabSize;  // new vocab size / tokenizer
+  config.max_seq_len = 32 * 1024;
+  LayerConfig layer_config = LayerConfigGemma3_270M_LM(config.model_dim);
+  config.num_layers = 18;
+  config.layer_configs = {config.num_layers, layer_config};
+  config.query_scale = QueryScaleType::SqrtKeySize;
+  // interleaved local / global attention
+  config.attention_window_sizes = RepeatedAttentionWindowSizes<18, 6>(
+      {512, 512, 512, 512, 512, config.max_seq_len});
+  return config;
+}
+
+static ModelConfig ConfigFromModel(Model model) {
+  switch (model) {
+    case Model::GEMMA2_2B:
+      return ConfigGemma2_2B();
+    case Model::GEMMA2_9B:
+      return ConfigGemma2_9B();
+    case Model::GEMMA2_27B:
+      return ConfigGemma2_27B();
+    case Model::PALIGEMMA2_3B_224:
+      return ConfigPaliGemma2_3B_224();
+    case Model::PALIGEMMA2_3B_448:
+      return ConfigPaliGemma2_3B_448();
+    case Model::PALIGEMMA2_10B_224:
+      return ConfigPaliGemma2_10B_224();
+    case Model::PALIGEMMA2_10B_448:
+      return ConfigPaliGemma2_10B_448();
+    case Model::GEMMA3_4B:
+      return ConfigGemma3_4B();
+    case Model::GEMMA3_1B:
+      return ConfigGemma3_1B();
+    case Model::GEMMA3_12B:
+      return ConfigGemma3_12B();
+    case Model::GEMMA3_27B:
+      return ConfigGemma3_27B();
+    case Model::GEMMA3_270M:
+      return ConfigGemma3_270M();
+    default:"
+17,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/generators.cpp,Generators::GeneratorParams::IsPastPresentShareBufferEnabled,447,"bool GeneratorParams::IsPastPresentShareBufferEnabled(const std::string& model_type) const {
+  // past_present_share_buffer is only actually enabled when:
+  // 1. The config option is set to true, AND
+  // 2. Either num_beams == 1 OR the model is Whisper
+  return search.past_present_share_buffer &&
+         (search.num_beams == 1 || model_type == ""whisper"");
+}
+
+double GeneratorParams::GetSearchNumber(std::string_view name) const {
+  if (name == ""batch_size"") {
+    return static_cast<double>(search.batch_size);
+  } else if (name == ""chunk_size"") {
+    return static_cast<double>(search.chunk_size.value_or(0));
+  } else if (name == ""diversity_penalty"") {
+    return search.diversity_penalty;
+  } else if (name == ""length_penalty"") {
+    return search.length_penalty;
+  } else if (name == ""max_length"") {
+    return static_cast<double>(search.max_length);
+  } else if (name == ""min_length"") {
+    return static_cast<double>(search.min_length);
+  } else if (name == ""no_repeat_ngram_size"") {
+    return static_cast<double>(search.no_repeat_ngram_size);
+  } else if (name == ""num_beams"") {
+    return static_cast<double>(search.num_beams);
+  } else if (name == ""num_return_sequences"") {
+    return static_cast<double>(search.num_return_sequences);
+  } else if (name == ""random_seed"") {
+    return static_cast<double>(search.random_seed);
+  } else if (name == ""repetition_penalty"") {
+    return search.repetition_penalty;
+  } else if (name == ""temperature"") {
+    return search.temperature;
+  } else if (name == ""top_k"") {
+    return static_cast<double>(search.top_k);
+  } else if (name == ""top_p"") {
+    return search.top_p;
+  } else {
+    throw std::runtime_error(std::string(name) + "" is an invalid name for GetSearchNumber."");
+  }
+}
+
+bool GeneratorParams::GetSearchBool(std::string_view name) const {
+  if (name == ""do_sample"") {
+    return search.do_sample;"
+18,openvino.genai,repos/openvino-genai/openvino.genai-master/samples/cpp/visual_language_chat/encrypted_model_vlm.cpp,encryption_callback,47,"std::string encryption_callback(const std::string& source_str) {
+    return codec_xor(source_str);
+}
+
+std::string decryption_callback(const std::string& source_str) {
+    return codec_xor(source_str);
+}
+
+auto get_config_for_cache_encryption() {
+    ov::AnyMap config;
+    config.insert({ov::cache_dir(""llm_cache"")});
+    ov::EncryptionCallbacks encryption_callbacks;
+    //use XOR-based encryption as an example
+    encryption_callbacks.encrypt = encryption_callback;
+    encryption_callbacks.decrypt = decryption_callback;
+    config.insert(ov::cache_encryption_callbacks(encryption_callbacks));
+    config.insert(ov::cache_mode(ov::CacheMode::OPTIMIZE_SIZE));
+    return config;
+}
+
+ov::genai::StreamingStatus print_subword(std::string&& subword) {
+    std::cout << subword << std::flush;
+    return ov::genai::StreamingStatus::RUNNING;
+}
+
+int main(int argc, char* argv[]) try {
+    if (4 != argc) {
+        throw std::runtime_error(std::string{""Usage ""} + argv[0] + "" <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT>"");
+    }
+
+    //read and encrypt models
+    std::filesystem::path models_path = argv[1];
+    ov::genai::ModelsMap models_map;
+
+    static const std::regex model_name_regex = std::regex(""^openvino_|_model$"");
+    for (const auto& entry : std::filesystem::directory_iterator(models_path)) {
+        if (entry.path().extension() != "".xml"")
+            continue;
+        const std::string stem = entry.path().stem().string();
+        if (stem.find(""tokenizer"") != std::string::npos)
+            continue;
+        const std::filesystem::path bin_file = entry.path().parent_path() / (stem + "".bin"");
+        if (!std::filesystem::exists(bin_file))
+            continue;"
+19,llama.cpp,repos/llama.cpp/ggml/src/ggml-opt.cpp,ggml_opt_prepare_alloc,712,"void ggml_opt_prepare_alloc(
+        ggml_opt_context_t    opt_ctx,
+        struct ggml_context * ctx_compute,
+        struct ggml_cgraph  * gf,
+        struct ggml_tensor  * inputs,
+        struct ggml_tensor  * outputs) {
+    GGML_ASSERT(!opt_ctx->static_graphs);
+    opt_ctx->ctx_compute = ctx_compute;
+    opt_ctx->gf          = gf;
+    opt_ctx->inputs      = inputs;
+    opt_ctx->outputs     = outputs;
+}
+
+void ggml_opt_alloc(ggml_opt_context_t opt_ctx, bool backward) {
+    GGML_ASSERT(!opt_ctx->eval_ready);
+    if (opt_ctx->build_type == GGML_OPT_BUILD_TYPE_OPT && opt_ctx->opt_period > 1 && opt_ctx->opt_i == 0) {
+        ggml_graph_reset(opt_ctx->gb_grad);
+    }
+    if (backward) {
+        const int32_t opt_i_next = (opt_ctx->opt_i + 1) % opt_ctx->opt_period;
+        opt_ctx->build_type = opt_i_next == 0 ? GGML_OPT_BUILD_TYPE_OPT : GGML_OPT_BUILD_TYPE_GRAD;
+    } else {
+        opt_ctx->build_type = GGML_OPT_BUILD_TYPE_FORWARD;
+    }
+
+    if (!opt_ctx->static_graphs) {
+        ggml_opt_build(opt_ctx);
+    }
+
+    struct ggml_cgraph * graph = nullptr;
+    switch (opt_ctx->build_type) {
+        case GGML_OPT_BUILD_TYPE_FORWARD: {
+            graph = opt_ctx->gf;
+        } break;
+        case GGML_OPT_BUILD_TYPE_GRAD: {
+            graph = opt_ctx->gb_grad;
+        } break;
+        case GGML_OPT_BUILD_TYPE_OPT: {
+            graph = opt_ctx->gb_opt;
+        } break;
+    }
+    GGML_ASSERT(graph);
+
+    if (opt_ctx->allocated_graph == graph) {
+        opt_ctx->eval_ready = true;"
+20,llama.cpp,repos/llama.cpp/src/llama-sampler.cpp,llama_sampler_top_p_free,1609,"static void llama_sampler_top_p_free(struct llama_sampler * smpl) {
+    delete (llama_sampler_top_p *) smpl->ctx;
+}
+
+static bool llama_sampler_top_p_backend_init(
+        struct llama_sampler       * smpl,
+        ggml_backend_buffer_type_t   buft,
+        uint32_t                     n_outputs_max_per_seq) {
+    auto * sctx = (llama_sampler_top_p *) smpl->ctx;
+    GGML_UNUSED(n_outputs_max_per_seq);
+
+    const bool res = llama_sampler_backend_support(smpl, buft);
+
+    sctx->init(res);
+
+    return res;
+}
+
+static void llama_sampler_top_p_backend_apply(
+        struct llama_sampler      * smpl,
+        struct ggml_context       * ctx,
+        struct ggml_cgraph        * gf,
+        struct llama_sampler_data * data) {
+    auto * sctx = (llama_sampler_top_p *) smpl->ctx;
+
+    // flatten
+    struct ggml_tensor * logits = ggml_reshape_1d(ctx, data->logits, ggml_nelements(data->logits));
+
+    auto ggml_sort = [ctx](struct ggml_tensor * a, struct ggml_tensor * b) {
+        GGML_ASSERT(ggml_nrows(a) == 1);
+        struct ggml_tensor * a_reshaped = ggml_reshape_2d(ctx, a, 1, a->ne[0]);
+        struct ggml_tensor * a_sorted   = ggml_get_rows(ctx, a_reshaped, b);
+        return a_sorted;
+    };
+
+    // Get the sorted logits in descending order.
+    struct ggml_tensor * sorted_idx = ggml_argsort(ctx, logits, GGML_SORT_ORDER_DESC);
+    ggml_set_name(sorted_idx, ""top_p_sorted_idx"");
+
+    // Do the sorting via reshape + get_rows
+    struct ggml_tensor * sorted_logits = ggml_sort(logits, sorted_idx);
+    ggml_set_name(sorted_logits, ""top_p_sorted_logits"");
+
+    sorted_logits = ggml_reshape_1d(ctx, sorted_logits, ggml_nelements(sorted_logits));
+    struct ggml_tensor * softmax = ggml_soft_max(ctx, sorted_logits);"
+21,llama.cpp,repos/llama.cpp/src/models/minicpm3.cpp,llama_model_minicpm3::graph::graph,63,"llama_model_minicpm3::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    //TODO: if the model varies, these parameters need to be read from the model
+    const int64_t n_embd_base = 256;
+    const float scale_embd  = 12.0f;
+    const float scale_depth = 1.4f;
+    const float kq_scale = 1.0f / sqrtf(float(hparams.n_embd_head_k()));
+
+    const uint32_t n_embd_head_qk_rope = hparams.n_rot();
+    const uint32_t n_embd_head_qk_nope = hparams.n_embd_head_k() - hparams.n_rot();
+
+    const uint32_t kv_lora_rank = hparams.n_lora_kv;
+
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    // scale the input embeddings
+    inpL = ggml_scale(ctx0, inpL, scale_embd);
+    cb(inpL, ""inp_scaled"", -1);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = build_inp_pos();
+
+    auto * inp_attn = build_attn_inp_kv();
+
+    ggml_tensor * inp_out_ids = build_inp_out_ids();
+
+    for (int il = 0; il < n_layer; ++il) {
+        ggml_tensor * inpSA = inpL;
+
+        ggml_tensor * rope_factors = model.get_rope_factors(cparams, il);
+
+        // norm
+        cur = build_norm(inpL,
+                model.layers[il].attn_norm, NULL,
+                LLM_NORM_RMS, il);
+        cb(cur, ""attn_norm"", il);
+
+        // self_attention
+        {
+            ggml_tensor * q = NULL;
+            // {n_embd, q_lora_rank} * {n_embd, n_tokens} -> {q_lora_rank, n_tokens}
+            q = ggml_mul_mat(ctx0, model.layers[il].wq_a, cur);
+            cb(q, ""q"", il);"
+22,llama.cpp,repos/llama.cpp/src/models/baichuan.cpp,llama_model_baichuan::load_arch_tensors,17,"void llama_model_baichuan::load_arch_tensors(llama_model_loader &) {
+    LLAMA_LOAD_LOCALS;
+
+    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, ""weight""), {n_embd, n_vocab}, 0);
+    {
+        output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, ""weight""), {n_embd}, 0);
+        output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      ""weight""), {n_embd, n_vocab}, 0);
+    }
+
+    for (int i = 0; i < n_layer; ++i) {
+        auto & layer = layers[i];
+
+        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, ""weight"", i), {n_embd}, 0);
+
+        create_tensor_qkv(layer, i, n_embd, n_embd, n_embd_gqa, n_embd_gqa, 0);
+        layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, ""weight"", i), {n_embd, n_embd}, 0);
+
+        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, ""weight"", i), {n_embd}, 0);
+
+        layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, ""weight"", i), {n_embd,   n_ff}, 0);
+        layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, ""weight"", i), {  n_ff, n_embd}, 0);
+        layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   ""weight"", i), {n_embd,   n_ff}, 0);
+    }
+}
+
+std::unique_ptr<llm_graph_context> llama_model_baichuan::build_arch_graph(const llm_graph_params & params) const {
+    return std::make_unique<graph>(*this, params);
+}
+
+llama_model_baichuan::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(n_embd_head == n_rot);
+
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = model.type == LLM_TYPE_7B ? build_inp_pos() : nullptr;
+
+    auto * inp_attn = build_attn_inp_kv();"
+23,llama.cpp,repos/llama.cpp/common/ngram-map.cpp,common_ngram_simple_draft,49,"llama_tokens common_ngram_simple_draft(
+        const common_ngram_simple_config & config,
+        const llama_tokens & tokens, llama_token sampled) {
+
+    // Simple implementation of self-speculative decoding without a draft model.
+    //
+    const size_t cur_len = tokens.size();
+
+    const size_t n_draft_min = config.size_ngram; // size of n-gram to lookup in token history
+    const size_t n_draft_max = config.size_mgram; // the m-gram following the found n-gram is used for draft
+
+    // vector for tokens we want to verify.
+    // return empty vector if there is no match.
+    llama_tokens draft_tokens;
+
+    // We need at least n_draft_min + n_draft_max + 1 tokens.
+    if (cur_len <= static_cast<size_t>(n_draft_min + n_draft_max + 1)) {
+        return draft_tokens;
+    }
+
+    // pattern search
+    llama_tokens pattern;
+    pattern.reserve(n_draft_min);
+    for (size_t j = cur_len - n_draft_min + 1; j < cur_len; ++j) {
+        pattern.push_back(tokens[j]);
+    }
+    pattern.push_back(sampled); // add the last token to the pattern
+
+    size_t match_pos = 0; // we ignore position 0, position 0 == no match
+                          // search backwards, but skip the current match (we are currently there)
+    for (size_t j = cur_len - n_draft_min - 1; j > 0; --j) {
+        bool match = true;
+        for (size_t k = 0; k < pattern.size(); ++k) {
+            if (tokens[j + k] != pattern[k]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            match_pos = j;
+            break;
+        }
+    }
+    if (match_pos == 0) {
+        return draft_tokens;"
+24,sglang,repos/sglang/python/sglang/srt/mem_cache/cpp_utils/hash_binding.cpp,(anonymous namespace)::hash_page,62,"inline void hash_page(const unsigned char *data, std::size_t len,
+                      bool &has_prior_digest,
+                      std::array<unsigned char, kDigestLen> &prior_digest) {
+  SHA256_CTX ctx;
+  SHA256_Init(&ctx);
+  if (has_prior_digest) {
+    SHA256_Update(&ctx, prior_digest.data(), prior_digest.size());
+  }
+  if (len > 0) {
+    SHA256_Update(&ctx, data, len);
+  }
+  SHA256_Final(prior_digest.data(), &ctx);
+  has_prior_digest = true;
+}
+
+template <typename RawToken>
+inline void fill_regular_page(const RawToken *raw, std::size_t start,
+                              std::size_t count, std::uint32_t *out) {
+  for (std::size_t i = 0; i < count; ++i) {
+    out[i] = checked_u32(raw[start + i]);
+  }
+}
+
+template <>
+inline void
+fill_regular_page<std::uint32_t>(const std::uint32_t *raw, std::size_t start,
+                                 std::size_t count, std::uint32_t *out) {
+  std::copy(raw + start, raw + start + count, out);
+}
+
+template <>
+inline void
+fill_regular_page<std::uint64_t>(const std::uint64_t *raw, std::size_t start,
+                                 std::size_t count, std::uint32_t *out) {
+#if defined(__AVX2__)
+  std::size_t i = 0;
+  for (; i + 4 <= count; i += 4) {
+    const __m256i v =
+        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(raw + start + i));
+    const __m256i high = _mm256_srli_epi64(v, 32);
+    if (!_mm256_testz_si256(high, high)) {
+      throw std::out_of_range(""token id does not fit in uint32"");
+    }
+    const __m256i low_pairs = _mm256_shuffle_epi32(v, _MM_SHUFFLE(2, 0, 2, 0));
+    const __m128i lane0 = _mm256_castsi256_si128(low_pairs);"
+25,DeepSpeed-FastGen,repos/deepspeed-fastgen/DeepSpeed-master/csrc/aio/py_lib/deepspeed_py_io_handle.cpp,deepspeed_io_handle_t::_create_io_op_desc,245,"std::shared_ptr<struct io_op_desc_t> deepspeed_io_handle_t::_create_io_op_desc(
+    const bool read_op,
+    const torch::Tensor& buffer,
+    const int fd,
+    const char* filename,
+    const bool validate,
+    const int64_t file_offset)
+{
+    return std::make_shared<cpu_op_desc_t>(_pinned_tensor_mgr,
+                                           read_op,
+                                           buffer,
+                                           fd,
+                                           filename,
+                                           _intra_op_parallelism,
+                                           validate,
+                                           file_offset);
+}
+
+int deepspeed_io_handle_t::_pread(const torch::Tensor& buffer,
+                                  const int fd,
+                                  const char* filename,
+                                  const bool validate,
+                                  const bool async,
+                                  const int64_t file_offset)
+{
+    std::lock_guard<std::mutex> lock(_handle_mutex);
+    auto scheduled_op = _create_io_op_desc(true, buffer, fd, filename, validate, file_offset);
+    _schedule_aio_work_locked(scheduled_op);
+
+    if (async) { return 0; }
+
+    return _wait_locked();
+}
+
+int deepspeed_io_handle_t::pread(const torch::Tensor& buffer,
+                                 const char* filename,
+                                 const bool validate,
+                                 const bool async,
+                                 const int64_t file_offset)
+{
+    const auto buffer_bytes = static_cast<int64_t>(buffer.nbytes());
+
+    if (!is_valid_bytes_to_read(filename, file_offset, buffer_bytes)) { return -1; }
+
+    if (!_is_valid_parallel_aio_op(true, buffer_bytes)) { return -1; }"
+26,DeepSpeed-FastGen,repos/deepspeed-fastgen/DeepSpeed-master/csrc/cpu/comm/shm.cpp,shared_create,69,"void shared_create(SharedData* data, const char* name, void* bytes, size_t nbytes)
+{
+    int d = shm_open(name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+    if (d != -1) {
+        if (nbytes = write(d, bytes, nbytes)) { shared_open(data, name, nbytes); }
+    } else {
+        printf(""shared_create %s failed\n"", name);
+    }
+}
+
+void shared_close(SharedData* data)
+{
+    if (data->descriptor != -1) {
+        munmap(data->bytes, data->nbytes);
+        shm_unlink(data->name);
+    }
+}
+
+static int world_size;
+
+// SHM based allreduce helper functions
+// buffer that holds shm name
+#define NAME_BUF_SIZE 1000
+#define MAX_BUF_SIZE 1048576 * 32
+#define NAIVE_ALLREDUCE_THRESHOLD 1048576
+#define SHM_BUFFER_NAME ""deepspeed_allreduce_buffer""
+struct allreduce_workspace {
+    enum coll_state states[2];  // idx=0 -- state for symmetric_naive_all_reduce
+                                // idx=1 -- state for distributed_naive_all_reduce
+    // double buffer to avoid syncing between rounds
+    // offset=0 -- 2*NAIVE_ALLREDUCE_THRESHOLD : buffer for symmetric_naive_all_reduce
+    // after that : buffer for distributed_naive_all_reduce
+    char buffer[2 * NAIVE_ALLREDUCE_THRESHOLD + 2 * MAX_BUF_SIZE];
+};
+
+#define BUFFER0_OFFSET(current_buffer) current_buffer* NAIVE_ALLREDUCE_THRESHOLD
+#define BUFFER1_OFFSET(current_buffer) 2 * NAIVE_ALLREDUCE_THRESHOLD + current_buffer* MAX_BUF_SIZE
+
+struct allreduce_workspace** workspace;
+
+// buffer for small messages, double buffer
+char** symmetric_buffer[2];
+// buffer for large messages, double buffer
+char** distributed_buffer[2];"
+27,lmdeploy,repos/lmdeploy/lmdeploy-main/src/turbomind/models/model_weight.cc,turbomind::ModelWeight::layers_list,63,"std::vector<DecoderLayerWeight*> ModelWeight::layers_list() const
+{
+    if (!layers_cache_.empty()) {
+        return layers_cache_;
+    }
+    if (!layers) {
+        return {};
+    }
+    layers_cache_.resize(layers->size());
+    for (int i = 0; i < layers->size(); ++i) {
+        layers_cache_[i] = static_cast<DecoderLayerWeight*>(layers->child(std::to_string(i)));
+    }
+    return layers_cache_;
+}
+
+bool ModelWeight::verify(std::vector<std::string>& missing)
+{
+    Module::verify(missing);
+    if (!tok_embeddings) {
+        missing.push_back(full_path() + "": missing tok_embeddings"");
+    }
+    if (!norm) {
+        missing.push_back(full_path() + "": missing norm"");
+    }
+    return missing.empty();
+}
+
+TM_MODULE_REGISTER(ModelWeight, core::ModelWeightConfig);
+
+TM_MODULE_METHODS(ModelWeight, MODEL_WEIGHT_CHILDREN, MODEL_WEIGHT_PARAMS)
+
+}  // namespace turbomind"
+28,llama.cpp,repos/llama.cpp/src/models/starcoder2.cpp,llama_model_starcoder2::graph::graph,59,"llama_model_starcoder2::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(n_embd_head == n_rot);
+
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = build_inp_pos();
+
+    auto * inp_attn = build_attn_inp_kv();
+
+    ggml_tensor * inp_out_ids = build_inp_out_ids();
+
+    for (int il = 0; il < n_layer; ++il) {
+        ggml_tensor * inpSA = inpL;
+
+        // norm
+        cur = build_norm(inpL,
+                model.layers[il].attn_norm, model.layers[il].attn_norm_b,
+                LLM_NORM, il);
+        cb(cur, ""attn_norm"", il);
+
+        // self-attention
+        {
+            // compute Q and K and RoPE them
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
+
+            Qcur = ggml_rope_ext(
+                    ctx0, Qcur, inp_pos, nullptr,
+                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                    ext_factor, attn_factor, beta_fast, beta_slow
+                    );
+
+            Kcur = ggml_rope_ext(
+                    ctx0, Kcur, inp_pos, nullptr,
+                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                    ext_factor, attn_factor, beta_fast, beta_slow
+                    );"
+29,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/models/input_ids.cpp,Generators::DefaultInputIDs::Add,36,"void DefaultInputIDs::Add() {
+  input_index_ = state_.inputs_.size();
+
+  state_.inputs_.push_back(value_->GetOrtTensor());
+  state_.input_names_.push_back(name_);
+
+  if (current_sequence_length_ && past_sequence_length_) {
+    state_.input_names_.push_back(model_.config_->model.decoder.inputs.current_sequence_length.c_str());
+    state_.inputs_.push_back(current_sequence_length_.get());
+    state_.input_names_.push_back(model_.config_->model.decoder.inputs.past_sequence_length.c_str());
+    state_.inputs_.push_back(past_sequence_length_.get());
+  }
+}
+
+void DefaultInputIDs::Update(DeviceSpan<int32_t> new_tokens) {
+  const auto get_unpadded_sequence_length = [](std::span<const int32_t> input_ids, int32_t pad_token_id) {
+    for (int32_t i = 0; i < input_ids.size(); i++) {
+      if (input_ids[i] == pad_token_id)
+        return i;
+    }
+    return static_cast<int32_t>(input_ids.size());
+  };
+
+  if (current_sequence_length_ && past_sequence_length_) {
+    auto new_tokens_cpu = new_tokens.CopyDeviceToCpu();
+    if (state_.params_->BatchBeamSize() != 1) {
+      throw std::runtime_error(""Batch size must be 1 for current_sequence_length and past_sequence_length inputs"");
+    }
+    auto new_sequence_length = get_unpadded_sequence_length(new_tokens_cpu, model_.config_->model.pad_token_id);
+    *current_sequence_length_->GetTensorMutableData<int32_t>() += new_sequence_length;
+    *past_sequence_length_->GetTensorMutableData<int32_t>() += new_sequence_length;
+  }
+
+  // For beam search, resize input_ids shape based on new_tokens
+  size_t sequence_length = static_cast<size_t>(new_tokens.size()) / state_.params_->BatchBeamSize();
+  if (is_prompt_ && state_.params_->search.num_beams > 1)
+    sequence_length = static_cast<size_t>(new_tokens.size()) / state_.params_->search.batch_size;
+
+  if (static_cast<size_t>(shape_[1]) != sequence_length) {
+    shape_[1] = sequence_length;
+    const int max_cap = state_.params_->max_graph_capture_length;
+    const bool use_static = state_.params_->use_graph_capture && shape_[1] >= 1 && shape_[1] <= max_cap;
+    const size_t static_cap_bytes = use_static ? static_cast<size_t>(shape_[0]) * max_cap * Ort::SizeOf(type_) : 0;
+    value_->CreateTensor(shape_, use_static, static_cap_bytes);
+    state_.inputs_[input_index_] = value_->GetOrtTensor();"
+30,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/models/speculative_decoding.cpp,Generators::(anonymous namespace)::ValidateSpeculativeGeneratorParams,83,"const GeneratorParams& ValidateSpeculativeGeneratorParams(const GeneratorParams& params) {
+  if (params.search.batch_size != 1)
+    throw std::runtime_error(
+        ""Speculative decoding does not support batch_size > 1 in this release. Got batch_size="" +
+        std::to_string(params.search.batch_size));
+
+  if (params.search.num_beams != 1)
+    throw std::runtime_error(
+        ""Speculative decoding does not support num_beams > 1 (beam search). Got num_beams="" +
+        std::to_string(params.search.num_beams) + ""."");
+
+  if (params.search.no_repeat_ngram_size != 0)
+    throw std::runtime_error(
+        ""Speculative decoding does not support no_repeat_ngram_size != 0 in this release. Got ""
+        ""no_repeat_ngram_size="" +
+        std::to_string(params.search.no_repeat_ngram_size) + ""."");
+
+  return params;
+}
+
+}  // namespace
+
+// SpeculativeDecodingModel
+SpeculativeDecodingModel::SpeculativeDecodingModel(std::unique_ptr<Config> config, OrtEnv& ort_env)
+    : Model{std::move(config)} {
+  if (!config_->model.draft || config_->model.draft->filename.empty())
+    throw std::runtime_error(
+        ""model.draft.filename is not set in genai_config.json."");
+
+  const auto& draft_config = *config_->model.draft;
+  if (!ProviderConfigurationMatches(config_->model.decoder.session_options,
+                                    draft_config.session_options))
+    throw std::runtime_error(
+        ""Target and draft must use the same execution provider. ""
+        ""Cross-EP speculative decoding is not supported in this release."");
+
+  if (!config_->model.decoder.pipeline.empty() || !draft_config.pipeline.empty())
+    throw std::runtime_error(
+        ""Speculative decoding does not support pipeline models in this release; ""
+        ""target and draft must be plain decoder-only LLMs."");
+  if (!config_->model.vision.filename.empty() || !config_->model.speech.filename.empty())
+    throw std::runtime_error(
+        ""Speculative decoding does not support multimodal (vision/audio) models in this release; ""
+        ""target and draft must be plain decoder-only LLMs."");"
+31,llama.cpp,repos/llama.cpp/common/chat.cpp,common_chat_template_direct_apply_impl,931,"static std::string common_chat_template_direct_apply_impl(
+    const common_chat_template & tmpl,
+    const autoparser::generation_params & inputs,
+    const std::optional<json> & messages_override = std::nullopt,
+    const std::optional<json> & tools_override = std::nullopt,
+    const std::optional<json> & additional_context = std::nullopt) {
+    jinja::context ctx(tmpl.source());
+
+    // messages_override is already built for this template, do not touch its content parts
+    nlohmann::ordered_json inp = nlohmann::ordered_json{
+        {""messages"", messages_override.has_value()
+            ? *messages_override
+            : messages_inp_normalizer(tmpl.original_caps()).normalize(inputs.messages)},
+        {""bos_token"", tmpl.bos_token()},
+        {""eos_token"", tmpl.eos_token()},
+        {""enable_thinking"", inputs.enable_thinking},
+    };
+    if (tools_override.has_value() || !inputs.tools.empty()) {
+        inp[""tools""] = tools_override.has_value() ? *tools_override : inputs.tools;
+    }
+    if (inputs.extra_context.is_object()) {
+        // TODO: do we need to merge, or replacing is fine?
+        for (const auto & [k, v] : inputs.extra_context.items()) {
+            inp[k] = v;
+        }
+    }
+    if (additional_context.has_value()) {
+        // TODO: merge properly instead of overwriting (matching old behavior)
+        for (const auto & [k, v] : additional_context->items()) {
+            inp[k] = v;
+        }
+    }
+    if (inputs.add_generation_prompt) {
+        inp[""add_generation_prompt""] = true;
+    }
+    if (inp.contains(""preserve_reasoning"") && inp[""preserve_reasoning""].is_boolean()) {
+        bool enabled = inp[""preserve_reasoning""].get<bool>();
+        jinja::caps_apply_preserve_reasoning(ctx, enabled);
+    }
+    if (inp.contains(""reasoning_effort"") && inp[""reasoning_effort""].is_string() && !inp[""reasoning_effort""].empty()) {
+        std::string reasoning_effort = inp[""reasoning_effort""].get<std::string>();
+        jinja::caps_apply_reasoning_effort(ctx, reasoning_effort);
+    }
+
+    jinja::global_from_json(ctx, inp, inputs.mark_input);"
+32,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/python/python.cpp,PyGenerator::AppendTokens,289,"  void AppendTokens(OgaTensor& tokens) {
+    generator_->AppendTokens(ToSpan<int32_t>(tokens));
+  }
+
+  void AppendTokens(pybind11::array_t<int32_t>& tokens) {
+    generator_->AppendTokens(ToSpan(tokens));
+  }
+
+  size_t TokenCount() const {
+    return generator_->TokenCount();
+  }
+
+  pybind11::array_t<float> GetLogits() {
+    return ToNumpy(*generator_->GetLogits());
+  }
+
+  void SetLogits(pybind11::array_t<float> new_logits) {
+    generator_->SetLogits(*ToOgaTensor(new_logits, false));
+  }
+
+  void GenerateNextToken() {
+    generator_->GenerateNextToken();
+  }
+
+  void RewindTo(size_t new_length) {
+    generator_->RewindTo(new_length);
+  }
+
+  void SnapshotState() {
+    generator_->SnapshotState();
+  }
+
+  void SetHiddenStates(pybind11::array& hidden_states) {
+    hidden_states_holder_ = ToOgaTensor(hidden_states, /*copy*/ true);
+    generator_->SetHiddenStates(*hidden_states_holder_);
+  }
+
+  bool IsDone() {
+    return generator_->IsDone();
+  }
+
+  void SetActiveAdapter(OgaAdapters& adapters, const std::string& adapter_name) {
+    generator_->SetActiveAdapter(adapters, adapter_name.c_str());
+  }"
+33,lmdeploy,repos/lmdeploy/lmdeploy-main/src/turbomind/core/context.cc,turbomind::core::(anonymous namespace)::ContextStorage::push_scope,117,"    void push_scope(const ScopeEntry& entry)
+    {
+        scope_.push_back(entry);
+    }
+
+    void pop_scope()
+    {
+        TM_CHECK(!scope_.empty()) << ""pop_scope called with empty scope stack"";
+        scope_.pop_back();
+    }
+
+    int scope_depth() const
+    {
+        return static_cast<int>(scope_.size());
+    }
+
+    std::string scope_trace() const
+    {
+        if (scope_.empty()) {
+            return {};
+        }
+        std::ostringstream oss;
+        oss << std::hex << std::this_thread::get_id();
+        std::string s = fmt::format(""*** stacktrace of thread 0x{} ***\n"", oss.str());
+        for (size_t i = 0; i < scope_.size(); ++i) {
+            const int r    = static_cast<int>(scope_.size()) - i - 1;
+            auto      name = StripNamespace(scope_[r].name);
+            if (scope_[r].type == scope_type::function) {
+                name = StripFunctionSignature(name);
+            }
+            else if (scope_[r].type == scope_type::call) {
+                if (auto p = name.find('('); p != std::string::npos) {
+                    name.resize(p);
+                }
+            }
+            s += fmt::format(""  [{:>2}] {} @ {}:{}\n"", i, name, StripPathPrefix(scope_[r].file), scope_[r].line);
+        }
+        return s;
+    }
+
+    static ContextStorage& instance()
+    {
+        thread_local ContextStorage inst{};
+        return inst;
+    }"
+34,llama.cpp,repos/llama.cpp/src/models/exaone-moe.cpp,llama_model_exaone_moe::graph::graph,113,"llama_model_exaone_moe::graph::graph(const llama_model & model, const llm_graph_params & params) :
+    llm_graph_context(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_k();
+
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_v());
+    GGML_ASSERT(n_embd_head == n_rot);
+
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = build_inp_pos();
+
+    auto * inp_attn_iswa = build_attn_inp_kv_iswa();
+
+    ggml_tensor * inp_out_ids = build_inp_out_ids();
+
+    for (int il = 0; il < n_layer; ++il) {
+        ggml_tensor * inpSA = inpL;
+
+        // use RoPE for SWA layers
+        const bool is_local_layer = hparams.is_swa(il);
+
+        // norm
+        cur = build_norm(inpL, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, il);
+        cb(cur, ""attn_norm"", il);
+
+        // self-attention
+        {
+            ggml_tensor * rope_factors = model.get_rope_factors(cparams, il);
+
+            // compute Q and K and RoPE them
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
+
+            Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
+            Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, NULL, LLM_NORM_RMS, il);
+            cb(Qcur, ""Qcur_normed"", il);
+            cb(Kcur, ""Kcur_normed"", il);
+
+            if (is_local_layer) {
+                Qcur = ggml_rope_ext(ctx0, Qcur, inp_pos, rope_factors, n_rot, rope_type, n_ctx_orig, freq_base,
+                                     freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);"
+35,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/engine/cache_manager.cpp,Generators::(anonymous namespace)::PagedCacheStepReservation::PagedReservation,37,"  PagedCacheReservation* PagedReservation() override {
+    return &*reservation_;
+  }
+
+  void Commit() override {
+    if (committed_) {
+      throw std::logic_error(""Paged cache step reservation can only be committed once."");
+    }
+    reservation_->Commit();
+    allocated_requests_.insert(allocated_requests_.end(),
+                               newly_admitted_.begin(),
+                               newly_admitted_.end());
+    committed_ = true;
+  }
+
+  void Release() override {
+    if (committed_) {
+      throw std::logic_error(""Cannot release a committed paged cache step reservation."");
+    }
+    reservation_->Release();
+  }
+
+ private:
+  std::vector<std::shared_ptr<Request>>& allocated_requests_;
+  std::vector<std::shared_ptr<Request>> newly_admitted_;
+  std::optional<PagedCacheReservation> reservation_;
+  bool committed_{};
+};
+
+}  // namespace
+
+std::unique_ptr<CacheManager> CacheManager::Create(std::shared_ptr<Model> model) {
+  if (model->config_->engine.dynamic_batching) {
+    return std::make_unique<PagedCacheManager>(model);
+  }
+
+  return std::make_unique<StaticCacheManager>(model);
+}
+
+StaticCacheManager::StaticCacheManager(std::shared_ptr<Model> model)
+    : CacheManager(model) {}
+
+bool StaticCacheManager::CanAllocate(const std::vector<std::shared_ptr<Request>>& requests) const {
+  if (cache_allocated_requests_.empty()) {
+    return true;"
+36,openvino.genai,repos/openvino-genai/openvino.genai-master/src/cpp/src/visual_language/gemma4/classes.cpp,ov::genai::InputsEmbedderGemma4::encode_vision_token_ids,662,"void InputsEmbedderGemma4::encode_vision_token_ids() {
+    std::call_once(m_vision_token_ids_once_flag, [this]() {
+        const auto encoded_vision_tokens =
+            m_tokenizer
+                .encode(m_vlm_config.image_token + m_vlm_config.video_token, ov::genai::add_special_tokens(false))
+                .input_ids;
+        OPENVINO_ASSERT(encoded_vision_tokens.get_size() == 2, ""Encoded vision tokens must contain two tokens"");
+        m_image_token_id = encoded_vision_tokens.data<int64_t>()[0];
+        m_video_token_id = encoded_vision_tokens.data<int64_t>()[1];
+    });
+}
+
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_extra_inputs() const {
+    return m_lm_extra_inputs;
+}
+
+void InputsEmbedderGemma4::patch_chat_template() {
+    std::string patched_chat_template = m_tokenizer.get_chat_template();
+    // minja does not support Python-style implicit concatenation of adjacent multiline string literals:
+    //     ""first ""
+    //     ""second""
+    // Normalize the pair to ""first second"" before parsing.
+    const std::regex multiline_string_concatenation{R""(""[ \t]*\r?\n[ \t]*"")""};
+    patched_chat_template = std::regex_replace(patched_chat_template, multiline_string_concatenation, """");
+
+    m_tokenizer.set_chat_template(patched_chat_template);
+}
+
+}  // namespace ov::genai"
+37,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/engine/model_executor.cpp,Generators::DecoderModelExecutor::Decode,54,"void DecoderModelExecutor::Decode(ScheduledRequests& scheduled_requests,
+                                  ExecutionContext& context) {
+  try {
+    cache_manager_->PrepareStep(scheduled_requests.Requests(), context);
+    context.block_table_columns = cache_manager_->BlockTableColumns();
+    decoder_->Decode(scheduled_requests, context);
+  } catch (const Ort::Exception& error) {
+    const auto failure_kind = ClassifyOrtExecutionFailure(error.what());
+    if (failure_kind == ExecutionFailureKind::CapacityExceeded) {
+      throw ModelExecutionError{
+          failure_kind,
+          std::string{""Model execution exceeded available memory. Cause: ""} +
+              error.what(),
+      };
+    }
+    throw;
+  }
+}
+
+}  // namespace Generators"
+38,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/models/parakeet.cpp,Generators::ParakeetTdtConfig::PopulateFromConfig,19,"void ParakeetTdtConfig::PopulateFromConfig(const Config& config) {
+  const auto& enc = config.model.encoder;
+  const auto& dec = config.model.decoder;
+  const auto& m = config.model;
+  const auto& jo = config.model.joiner;
+
+  hidden_dim = enc.hidden_size;
+  num_encoder_layers = enc.num_hidden_layers;
+
+  decoder_lstm_dim = dec.hidden_size;
+  decoder_lstm_layers = dec.num_hidden_layers;
+
+  subsampling_factor = m.subsampling_factor;
+  sample_rate = m.sample_rate;
+  chunk_samples = m.chunk_samples;
+  blank_id = m.blank_id;
+  max_symbols_per_step = m.max_symbols_per_step;
+  left_context_samples = m.left_context_samples;
+  right_context_samples = m.right_context_samples;
+
+  tdt_durations = m.tdt_durations;
+
+  enc_in_audio = enc.inputs.audio_features;
+  enc_out_encoded = enc.outputs.encoder_outputs;
+  enc_in_length = enc.inputs.input_lengths;
+  enc_out_length = enc.outputs.output_lengths;
+
+  join_in_encoder = jo.inputs.encoder_outputs;
+  join_in_decoder = jo.inputs.decoder_outputs;
+  join_out_logits = jo.outputs.logits;
+
+  dec_in_targets = dec.inputs.targets;
+  dec_in_targets_length = dec.inputs.targets_length;
+  dec_in_lstm_hidden_state = dec.inputs.lstm_hidden_state;
+  dec_in_lstm_cell_state = dec.inputs.lstm_cell_state;
+  dec_out_outputs = dec.outputs.outputs;
+  dec_out_outputs_length = dec.outputs.outputs_length;
+  dec_out_lstm_hidden_state = dec.outputs.lstm_hidden_state;
+  dec_out_lstm_cell_state = dec.outputs.lstm_cell_state;
+}
+
+ParakeetTdtModel::ParakeetTdtModel(std::unique_ptr<Config> config, OrtEnv& ort_env)
+    : Model{std::move(config)} {
+  parakeet_config_.PopulateFromConfig(*config_);"
+39,llama.cpp,repos/llama.cpp/common/peg-parser.cpp,gbnf_escape_char_class,1359,"static std::string gbnf_escape_char_class(uint32_t c) {
+    if (c == '-' || c == ']' || c == '[' || c == '\\') {
+        return ""\\"" + std::string(1, (char) c);
+    }
+    // Escape whitespace control characters
+    if (c == '\n') {
+        return ""\\n"";
+    }
+    if (c == '\t') {
+        return ""\\t"";
+    }
+    if (c == '\r') {
+        return ""\\r"";
+    }
+
+    // Printable ASCII
+    if (c >= 0x20 && c <= 0x7E) {
+        return std::string(1, (char) c);
+    }
+
+    // Hex escape
+    char         buf[16];
+    const char * hex = ""0123456789ABCDEF"";
+
+    if (c <= 0xFF) {
+        buf[0] = '\\';
+        buf[1] = 'x';
+        buf[2] = hex[(c >> 4) & 0xF];
+        buf[3] = hex[c & 0xF];
+        buf[4] = '\0';
+    } else if (c <= 0xFFFF) {
+        buf[0] = '\\';
+        buf[1] = 'u';
+        buf[2] = hex[(c >> 12) & 0xF];
+        buf[3] = hex[(c >> 8) & 0xF];
+        buf[4] = hex[(c >> 4) & 0xF];
+        buf[5] = hex[c & 0xF];
+        buf[6] = '\0';
+    } else {
+        buf[0] = '\\';
+        buf[1] = 'U';
+        for (int i = 0; i < 8; i++) {
+            buf[2 + i] = hex[(c >> ((7 - i) * 4)) & 0xF];
+        }
+        buf[10] = '\0';"
+40,lmdeploy,repos/lmdeploy/lmdeploy-main/src/turbomind/models/input_processor.cc,turbomind::InputProcessor::Impl::Prepare,173,"    void Prepare(int phase, TensorMap& env)
+    {
+        auto& d    = data_.at(phase);
+        auto& b    = *env.at(""batch"").data<BatchData*>()[0];
+        auto& copy = *env.at(""copy"").data<BatchCopy*>()[0];
+
+        // last output token + draft tokens
+        const Buffer_<int> autoreg_ids = env.at(""autoreg_ids"").buffer();
+
+        // core::CopyT copy{};
+
+        if (auto g = copy.group()) {
+            for (int i = 0; i < b.bsz; ++i) {
+                if (auto pos = d.autoreg_ids_pos[i]; pos >= 0) {
+                    TM_CHECK_LT(b.perm[i], b.bs0);
+                    copy(autoreg_ids.data() + b.perm[i], 1, &d.input_ids[pos]);
+                }
+            }
+        }
+
+        env.produce(""input_ids"", d.input_ids.slice(0, d.input_token_num));
+        env.produce(""q_offsets"", d.input_ids_offsets.slice(0, b.bsz + 1));
+        env.produce(""selected_token_pos"", d.selected_token_pos.slice(0, b.bsz));
+    }
+
+    void PatchInputEmbedding(int phase, Tensor& embeds, BatchCopy& copy)
+    {
+        auto&      d           = data_.at(phase);
+        const auto byte_stride = byte_size(embeds.dtype(), embeds.stride(0));
+        int        offset      = 0;
+        for (const auto& [size, pos] : d.input_embeds_coords) {
+            auto src = d.input_embeds_buf.slice(offset, size);
+            copy((uint8_t*)src.raw_data(), src.byte_size(), (uint8_t*)embeds.raw_data() + byte_stride * pos);
+            offset += size;
+        }
+    }
+
+    void PatchMultimodalEmbedding(Tensor& embeds, BatchCopy& copy, const MultiModalEmbeddingData& multimodal)
+    {
+        TM_CHECK_EQ(multimodal.input_embeds_coords.size(), multimodal.image_embeds_coords.size());
+        const int num_embeddings = multimodal.image_embeds_coords.size();
+        for (int i = 0; i < num_embeddings; ++i) {
+            const auto& [sz0, image_offset] = multimodal.image_embeds_coords[i];
+            const auto& [sz1, input_offset] = multimodal.input_embeds_coords[i];
+            TM_CHECK_EQ(sz0, sz1);"
+41,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/models/recurrent_state.cpp,Generators::RecurrentState::Snapshot,305,"void RecurrentState::Snapshot(size_t position) {
+  if (layer_indices_.empty()) return;
+
+  // The live state is in presents_ (shared-buffer EPs alias input==output to it;
+  // non-shared EPs keep the latest in presents_ after Update()'s swap).
+  if (snapshot_.empty()) {
+    auto& allocator = model_.p_device_kvcache_->GetAllocator();
+    const int num_layers = static_cast<int>(layer_indices_.size());
+    snapshot_.reserve(num_layers * 2);
+    for (int i = 0; i < num_layers; ++i) {
+      snapshot_.push_back(OrtValue::CreateTensor(allocator, conv_shape_, conv_type_));
+      snapshot_.push_back(OrtValue::CreateTensor(allocator, recurrent_shape_, recurrent_type_));
+    }
+  }
+  CopyStates(presents_, snapshot_);
+  snapshot_position_ = position;
+  snapshot_valid_ = true;
+}
+
+void RecurrentState::RestoreSnapshot() {
+  if (layer_indices_.empty()) return;
+  if (!snapshot_valid_) {
+    throw std::runtime_error(""RecurrentState::RestoreSnapshot called before Snapshot"");
+  }
+  // Copy back into the live buffers in place so their addresses stay stable
+  // (required by CUDA-graph replay, which captures fixed buffer pointers).
+  CopyStates(snapshot_, presents_);
+}
+
+std::unique_ptr<RecurrentState> CreateRecurrentState(State& state) {
+  auto recurrent_state = std::make_unique<RecurrentState>(state);
+  if (recurrent_state->IsEmpty()) {
+    return nullptr;
+  }
+  return recurrent_state;
+}
+
+}  // namespace Generators"
+42,sglang,repos/sglang/python/sglang/kernels/aot/csrc/infllm_v2/flash_attn/flash_api.cpp,set_params_fprop,23,"void set_params_fprop(
+    Flash_fwd_params& params,
+    // sizes
+    const size_t b,
+    const size_t seqlen_q,
+    const size_t seqlen_k,
+    const size_t seqlen_q_rounded,
+    const size_t seqlen_k_rounded,
+    const size_t h,
+    const size_t h_k,
+    const size_t d,
+    const size_t d_rounded,
+    // device pointers
+    const at::Tensor q,
+    const at::Tensor k,
+    const at::Tensor v,
+    at::Tensor out,
+    void* cu_seqlens_q_d,
+    void* cu_seqlens_k_d,
+    void* seqused_k,
+    void* p_d,
+    void* softmax_lse_d,
+    float p_dropout,
+    float softmax_scale,
+    int window_size_left,
+    int window_size_right,
+    const float softcap,
+    bool seqlenq_ngroups_swapped = false,
+    const bool unpadded_lse = false) {
+  // Reset the parameters
+  params = {};
+
+  params.is_bf16 = q.dtype() == torch::kBFloat16;
+
+  // Set the pointers and strides.
+  params.q_ptr = q.data_ptr();
+  params.k_ptr = k.data_ptr();
+  params.v_ptr = v.data_ptr();
+  // All stride are in elements, not bytes.
+  params.q_row_stride = q.stride(-3);
+  params.k_row_stride = k.stride(-3);
+  params.v_row_stride = v.stride(-3);
+  params.q_head_stride = q.stride(-2);
+  params.k_head_stride = k.stride(-2);
+  params.v_head_stride = v.stride(-2);"
+43,llama.cpp,repos/llama.cpp/src/llama-model.cpp,llama_free_model,2506,"void llama_free_model(llama_model * model) {
+    llama_model_free(model);
+}
+
+void llama_model_free(llama_model * model) {
+    delete model;
+}
+
+int32_t llama_model_n_ctx_train(const llama_model * model) {
+    return model->hparams.n_ctx_train;
+}
+
+int32_t llama_model_n_embd(const llama_model * model) {
+    return model->hparams.n_embd;
+}
+
+int32_t llama_model_n_embd_inp(const llama_model * model) {
+    return model->hparams.n_embd_inp();
+}
+
+int32_t llama_model_n_embd_out(const llama_model * model) {
+    return model->hparams.n_embd_out();
+}
+
+int32_t llama_model_n_layer(const llama_model * model) {
+    return model->hparams.n_layer();
+}
+
+int32_t llama_model_n_layer_nextn(const llama_model * model) {
+    return model->hparams.n_layer_nextn;
+}
+
+int32_t llama_model_n_head(const llama_model * model) {
+    return model->hparams.n_head();
+}
+
+int32_t llama_model_n_head_kv(const llama_model * model) {
+    return model->hparams.n_head_kv();
+}
+
+int32_t llama_model_n_swa(const llama_model * model) {
+    // dsv4 kv-cache has SWA but it cannot be used as a rollback because of
+    // other compression ratios, so we return 0 here
+    if (model->arch == LLM_ARCH_DEEPSEEK4) {
+        return 0;"
+44,llama.cpp,repos/llama.cpp/src/models/dots1.cpp,llama_model_dots1::graph::graph,74,"llama_model_dots1::graph::graph(const llama_model & model, const llm_graph_params & params) :
+    llm_graph_context(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(n_embd_head == n_rot);
+
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = build_inp_pos();
+
+    auto * inp_attn = build_attn_inp_kv();
+
+    ggml_tensor * inp_out_ids = build_inp_out_ids();
+
+    for (int il = 0; il < n_layer; ++il) {
+        ggml_tensor * inpSA = inpL;
+
+        // norm
+        cur = build_norm(inpL, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, il);
+        cb(cur, ""attn_norm"", il);
+
+        // self_attention
+        {
+            // compute Q and K and RoPE them
+            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
+                    n_embd_head, n_head, n_head_kv, il);
+
+            Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
+            cb(Qcur, ""Qcur_normed"", il);
+
+            Qcur = ggml_rope_ext(ctx0, Qcur, inp_pos, nullptr, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                                 ext_factor, attn_factor, beta_fast, beta_slow);
+
+            Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, NULL, LLM_NORM_RMS, il);
+            cb(Kcur, ""Kcur_normed"", il);
+
+            Kcur = ggml_rope_ext(ctx0, Kcur, inp_pos, nullptr, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                                 ext_factor, attn_factor, beta_fast, beta_slow);
+
+            cb(Qcur, ""Qcur"", il);"
+45,openvino.genai,repos/openvino-genai/openvino.genai-master/src/python/py_utils.cpp,(anonymous namespace)::GilSafeGeneratorWrapper::next,54,"    float next() override {
+        return m_impl->next();
+    }
+    ov::Tensor randn_tensor(const ov::Shape& shape) override {
+        return m_impl->randn_tensor(shape);
+    }
+    void seed(size_t new_seed) override {
+        m_impl->seed(new_seed);
+    }
+};
+
+// Permissive mapping: any value outside {RUNNING, CANCEL, TOOL_CALL_STOP} (including legacy
+// `True`/non-zero ints from older Python callbacks that returned bool) is treated as STOP so
+// we don't break user code that returned bools to mean ""stop streaming"".
+ov::genai::StreamingStatus map_py_status(const std::optional<uint16_t>& result) {
+    if (!result.has_value())
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::RUNNING))
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::CANCEL))
+        return ov::genai::StreamingStatus::CANCEL;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::TOOL_CALL_STOP))
+        return ov::genai::StreamingStatus::TOOL_CALL_STOP;
+    return ov::genai::StreamingStatus::STOP;
+}
+
+}  // namespace
+
+namespace ov::genai::pybind::utils {
+
+py::str handle_utf8(const std::string& text) {
+    // pybind11 decodes strings similar to Pythons's
+    // bytes.decode('utf-8'). It raises if the decoding fails.
+    // generate() may return incomplete Unicode points if max_new_tokens
+    // was reached. Replace such points with � instead of raising an exception
+    PyObject* py_s = PyUnicode_DecodeUTF8(text.data(), text.length(), ""replace"");
+    return py::reinterpret_steal<py::object>(py_s);
+}
+
+py::list handle_utf8(const std::vector<std::string>& decoded_res) {
+    py::list res;
+    for (const auto& s : decoded_res) {
+        py::str r = handle_utf8(s);
+        res.append(r);
+    }"
+46,lmdeploy,repos/lmdeploy/lmdeploy-main/src/turbomind/core/context.cc,turbomind::core::(anonymous namespace)::ContextStorage::push,69,"    void push(const Stream& stream)
+    {
+        int mask{};
+        if (stream) {
+            stream_.push(stream);
+            mask = stream_bit;
+        }
+        mask_.push(mask);
+    }
+
+    void push(const Allocator& alloc)
+    {
+        int mask{};
+        if (alloc) {
+            const auto type = alloc->device().type;
+            if (type == kCPU) {
+                mask = host_alloc_bit;
+                host_alloc_.push(alloc);
+            }
+            else if (type == kDEVICE) {
+                mask = device_alloc_bit;
+                device_alloc_.push(alloc);
+            }
+            else if (type == kCPUpinned) {
+                mask = pinned_alloc_bit;
+                pinned_alloc_.push(alloc);
+            }
+        }
+        mask_.push(mask);
+    }
+
+    void pop()
+    {
+        if (mask_.top() & stream_bit) {
+            stream_.pop();
+        }
+        if (mask_.top() & host_alloc_bit) {
+            host_alloc_.pop();
+        }
+        if (mask_.top() & device_alloc_bit) {
+            device_alloc_.pop();
+        }
+        if (mask_.top() & pinned_alloc_bit) {
+            pinned_alloc_.pop();
+        }"
+47,llama.cpp,repos/llama.cpp/common/jinja/runtime.cpp,jinja::identifier::execute_impl,83,"value identifier::execute_impl(context & ctx) {
+    auto it = ctx.get_val(val);
+    auto builtins = global_builtins();
+    if (!it->is_undefined()) {
+        if (ctx.is_get_stats) {
+            value_t::stats_t::mark_used(it);
+        }
+        JJ_DEBUG(""Identifier '%s' found, type = %s"", val.c_str(), it->type().c_str());
+        return it;
+    } else if (builtins.find(val) != builtins.end()) {
+        JJ_DEBUG(""Identifier '%s' found in builtins"", val.c_str());
+        return mk_val<value_func>(val, builtins.at(val));
+    } else {
+        JJ_DEBUG(""Identifier '%s' not found, returning undefined"", val.c_str());
+        return mk_val<value_undefined>(val);
+    }
+}
+
+value object_literal::execute_impl(context & ctx) {
+    auto obj = mk_val<value_object>();
+    for (const auto & pair : val) {
+        value key = pair.first->execute(ctx);
+        value val = pair.second->execute(ctx);
+        JJ_DEBUG(""Object literal: setting key '%s' with value type %s"", key->as_string().str().c_str(), val->type().c_str());
+        obj->insert(key, val);
+    }
+    return obj;
+}
+
+value binary_expression::execute_impl(context & ctx) {
+    value left_val = left->execute(ctx);
+
+    // Logical operators
+    if (op.value == ""and"") {
+        JJ_DEBUG(""Executing logical test: %s AND %s"", left->type().c_str(), right->type().c_str());
+        return left_val->as_bool() ? right->execute(ctx) : std::move(left_val);
+    } else if (op.value == ""or"") {
+        JJ_DEBUG(""Executing logical test: %s OR %s"", left->type().c_str(), right->type().c_str());
+        return left_val->as_bool() ? std::move(left_val) : right->execute(ctx);
+    }
+
+    // Equality operators
+    value right_val = right->execute(ctx);
+    JJ_DEBUG(""Executing binary expression %s '%s' %s"", left_val->type().c_str(), op.value.c_str(), right_val->type().c_str());
+    if (op.value == ""=="") {"
+48,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/engine/paged_key_value_cache.cpp,Generators::PagedKeyValueCache::CanAppendTokens,115,"bool PagedKeyValueCache::CanAppendTokens(std::shared_ptr<Request> request) const {
+  const auto block_table_it = std::find_if(block_tables_.begin(), block_tables_.end(),
+                                           [&request](const PagedCacheBlockTable& block_table) {
+                                             return block_table.request_id == request.get();
+                                           });
+  if (block_table_it == block_tables_.end()) {
+    throw std::runtime_error(""Given request is not found in the cache."");
+  }
+
+  const size_t required_slots = RequiredSlots(request);
+  const size_t used_slots = block_table_it->committed_slots;
+  if (required_slots <= used_slots) {
+    return true;
+  }
+
+  const size_t num_slots_available =
+      block_table_it->blocks.size() * block_pool_->BlockSize() - used_slots +
+      block_pool_->AvailableBlocks() * block_pool_->BlockSize();
+
+  return num_slots_available >= required_slots - used_slots;
+}
+
+void PagedKeyValueCache::AppendTokens(std::shared_ptr<Request> request) {
+  if (!CanAppendTokens(request)) {
+    throw std::runtime_error(""Not enough free slots available to append tokens to the request."");
+  }
+
+  const auto block_table_it = std::find_if(block_tables_.begin(), block_tables_.end(),
+                                           [&request](const PagedCacheBlockTable& block_table) {
+                                             return block_table.request_id == request.get();
+                                           });
+  assert(block_table_it != block_tables_.end());
+
+  const size_t required_slots = RequiredSlots(request);
+  const size_t used_slots = block_table_it->committed_slots;
+  assert(UsedSlots(block_table_it->blocks) == used_slots);
+  assert(used_slots == static_cast<size_t>(request->ProcessedSequenceLength()));
+  if (required_slots <= used_slots) {
+    return;
+  }
+  size_t num_slots = required_slots - used_slots;
+
+  size_t block_index = used_slots / block_pool_->BlockSize();
+  while (num_slots > 0 && block_index < block_table_it->blocks.size()) {
+    auto& block = block_table_it->blocks[block_index++];"
+49,openvino.genai,repos/openvino-genai/openvino.genai-master/src/cpp/src/speech_generation/misaki_cpp/src/en_g2p.cpp,misaki::(anonymous namespace)::EnglishG2P::pronounce_integer_token,2088,"  std::optional<std::string> pronounce_integer_token(const std::string &digits) const {
+    if (!is_all_digits(digits)) {
+      return std::nullopt;
+    }
+    const auto parsed_value = parse_i64(digits);
+    if (!parsed_value.has_value()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> words;
+    std::istringstream iss(integer_to_words(*parsed_value));
+    for (std::string w; iss >> w;) {
+      words.push_back(w);
+    }
+    return words_to_phonemes(words, true);
+  }
+
+  std::optional<std::string> pronounce_code_segment(const std::string &segment) const {
+    if (segment.empty()) {
+      return std::nullopt;
+    }
+
+    if (is_all_digits(segment) && segment.size() == 3 && segment[0] != '0') {
+      const auto head = pronounce_integer_token(segment.substr(0, 1));
+      const auto tail = pronounce_integer_token(segment.substr(1));
+      if (head && tail) {
+        return *head + "" "" + *tail;
+      }
+    }
+
+    if (const auto direct = lookup_direct_pronunciation(segment)) {
+      return normalize_pronunciation(*direct);
+    }
+
+    if (const auto number = pronounce_integer_token(segment)) {
+      return *number;
+    }
+
+    std::size_t digit_prefix = 0;
+    while (digit_prefix < segment.size() && std::isdigit(static_cast<unsigned char>(segment[digit_prefix]))) {
+      ++digit_prefix;
+    }
+    if (digit_prefix > 0 && digit_prefix < segment.size()) {
+      const auto digits = segment.substr(0, digit_prefix);
+      const auto suffix = segment.substr(digit_prefix);
+      if (is_all_upper_alpha(suffix)) {"
+50,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/models/decoder_only.cpp,Generators::DecoderOnly_State::RecurrentStateWindow,123,"int64_t DecoderOnly_State::RecurrentStateWindow() const {
+  return recurrent_state_ ? recurrent_state_->StateWindow() : 1;
+}
+
+void DecoderOnly_State::CropToAccepted(size_t new_length, size_t recurrent_position) {
+  // Roll the attention KV cache + position back to the committed length, and crop the recurrent
+  // state to the state AFTER verify token `recurrent_position` (no replay forward). Used by
+  // lossless multi-token MTP partial accept.
+  position_inputs_->RewindTo(new_length);
+  if (kv_cache_)
+    kv_cache_->RewindTo(new_length);
+  if (recurrent_state_)
+    recurrent_state_->CropToPosition(recurrent_position);
+}
+
+void DecoderOnly_State::UpdateInputsOutputs(DeviceSpan<int32_t>& next_tokens, DeviceSpan<int32_t> beam_indices, int total_length) {
+  input_ids_.Update(next_tokens);
+  size_t new_length = static_cast<size_t>(input_ids_.GetShape()[1]);
+
+  // Determine effective lengths for position_ids and KV cache based on sliding window config
+  int position_length = total_length;
+  int kv_cache_length = total_length;
+
+  if (model_.config_->model.decoder.sliding_window.has_value() &&
+      model_.config_->model.decoder.sliding_window->window_size > 0) {
+    const int window_size = model_.config_->model.decoder.sliding_window->window_size;
+
+    // Position IDs are clamped when slide_inputs is true
+    if (model_.config_->model.decoder.sliding_window->slide_inputs) {
+      position_length = std::min(total_length, window_size);
+    }
+
+    // KV cache is clamped when slide_key_value_cache is true
+    if (model_.config_->model.decoder.sliding_window->slide_key_value_cache) {
+      kv_cache_length = std::min(total_length, window_size);
+    }
+  }
+
+  position_inputs_->Update(next_tokens, position_length, static_cast<int>(new_length));
+  if (kv_cache_)
+    kv_cache_->Update(beam_indices, kv_cache_length);
+  if (recurrent_state_)
+    recurrent_state_->Update();
+  if (hidden_states_)
+    hidden_states_->Update(static_cast<int>(new_length));"
+51,llama.cpp,repos/llama.cpp/src/llama-hparams.cpp,llama_hparams::n_embd_v_gqa_max,174,"uint32_t llama_hparams::n_embd_v_gqa_max() const {
+    uint32_t val = n_embd_v_gqa();
+    for (uint32_t il = 0; il < n_layer_all; ++il) {
+        val = std::max(val, n_embd_v_gqa(il));
+    }
+
+    return val;
+}
+
+uint32_t llama_hparams::n_embd_r() const {
+    if (wkv_head_size != 0) {
+        // for RWKV models
+        return token_shift_count * n_embd;
+    }
+
+    if (n_shortconv_l_cache != 0) {
+        // for LFM2 models
+        return n_embd * (n_shortconv_l_cache - 1);
+    }
+
+    if (n_embd_head_kda != 0) {
+        // for Kimi KDA layers
+        // Conv state for Q, K, V: 3 * (d_conv - 1) * n_head * head_dim
+        const uint32_t d_inner = n_head() * n_embd_head_kda;  // 32 * 128 = 4096
+        return 3 * (ssm_d_conv > 0 ? ssm_d_conv - 1 : 3) * d_inner;
+    }
+
+    // TODO: maybe support other convolution strides than 1
+    // NOTE: since the first column of the conv_state is shifted out each time, it's not actually needed
+    // Corresponds to Mamba's conv_states size
+    return (ssm_d_conv > 0 ? ssm_d_conv - 1 : 0) * (ssm_d_inner + 2*ssm_n_group*ssm_d_state);
+}
+
+uint32_t llama_hparams::n_embd_s() const {
+    if (wkv_head_size != 0) {
+        // corresponds to RWKV's wkv_states size
+        return n_embd * wkv_head_size;
+    }
+
+    if (n_embd_head_kda != 0) {
+        // for Kimi KDA layers
+        // Full recurrent state: head_dim * head_dim * n_head
+        // h tensor shape for delta attention: [head_dim, head_dim, n_head]
+        return n_embd_head_kda * n_embd_head_kda * n_head();  // 128 * 128 * 32 = 524288
+    }"
+52,llama.cpp,repos/llama.cpp/src/llama-context.cpp,llama_context::set_nextn_layer_offset,1180,"void llama_context::set_nextn_layer_offset(int32_t offset) {
+    cparams.nextn_layer_offset = offset;
+}
+
+void llama_context::set_causal_attn(bool value) {
+    LLAMA_LOG_DEBUG(""%s: value = %d\n"", __func__, value);
+
+    if (cparams.causal_attn == value) {
+        return;
+    }
+
+    cparams.causal_attn = value;
+
+    sched_need_reserve = true;
+}
+
+void llama_context::set_warmup(bool value) {
+    LLAMA_LOG_DEBUG(""%s: value = %d\n"", __func__, value);
+
+    if (cparams.warmup == value) {
+        return;
+    }
+
+    cparams.warmup = value;
+
+    // warmups are usually with small batches, so no need to reserve
+    //sched_need_reserve = true;
+}
+
+bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
+    if (!sampler && sampling.samplers.count(seq_id) == 0) {
+        return true;
+    }
+
+    LLAMA_LOG_DEBUG(""%s: seq_id = %d, sampler = %p\n"", __func__, (int) seq_id, (void *) sampler);
+
+    if (sampler && model.split_mode() == LLAMA_SPLIT_MODE_TENSOR) {
+        static bool warned = false;
+        if (!warned) {
+            LLAMA_LOG_WARN(""%s: backend sampling not supported with SPLIT_MODE_TENSOR; using CPU\n"", __func__);
+            warned = true;
+        }
+        if (sampling.samplers.count(seq_id) > 0) {
+            sched_need_reserve = true;
+        }"
+53,llama.cpp,repos/llama.cpp/examples/lookahead/lookahead.cpp,main,41,"int main(int argc, char ** argv) {
+    std::setlocale(LC_NUMERIC, ""C"");
+
+    common_params params;
+
+    common_init();
+
+    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_COMMON)) {
+        return 1;
+    }
+
+    const int W = 15; // lookahead window
+    const int N = 5;  // n-gram size
+    const int G = 15; // max verification n-grams
+
+    // lookahead requires W + G + 1 sequences for parallel Jacobi decoding
+    params.n_parallel = W + G + 1;
+
+    // unified KV cache is required for coupled sequences in batch splitting
+    params.kv_unified = true;
+
+    // init llama.cpp
+    llama_backend_init();
+    llama_numa_init(params.numa);
+
+    // load the target model
+    auto llama_init = common_init_from_params(params);
+
+    auto * model = llama_init->model();
+    auto * ctx   = llama_init->context();
+
+    auto * mem = llama_get_memory(ctx);
+
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    // Tokenize the prompt
+    std::vector<llama_token> inp;
+    std::vector<llama_token> all;
+
+    inp = common_tokenize(ctx, params.prompt, true, true);
+    all = inp;
+
+    const int max_context_size     = llama_n_ctx(ctx);
+    const int max_tokens_list_size = max_context_size - 4;"
+54,openvino.genai,repos/openvino-genai/openvino.genai-master/src/cpp/src/visual_language/chat_history_state.cpp,ov::genai::ChatHistoryInternalState::release_refs_from,253,"void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t video_index) {
+    auto vision_registry = m_vision_registry.lock();
+    if (!vision_registry)
+        return;
+    
+    for (size_t i = image_index; i < m_image_index_to_id.size(); ++i) {
+        vision_registry->release_ref(m_image_index_to_id[i]);
+    }
+    for (size_t i = video_index; i < m_video_index_to_id.size(); ++i) {
+        vision_registry->release_ref(m_video_index_to_id[i]);
+    }
+}
+
+size_t ChatHistoryInternalState::find_last_user_message_index(const ov::genai::ChatHistory& history) {
+    for (size_t i = history.size(); i > 0; --i) {
+        const auto& message = history[i - 1];
+        if (!message.contains(""role"")) {
+            continue;
+        }
+        if (message[""role""].get_string() == ""user"") {
+            return i - 1;
+        }
+    }
+    OPENVINO_THROW(""No user message found in chat history."");
+}
+
+/**
+ * @brief Detects chat history format based on the last user message
+ * and verifies different formats are not mixed within the history.
+ */
+void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& history) {
+    ChatHistoryFormat detected_format = ChatHistoryFormat::UNKNOWN;
+
+    m_last_user_message_index = find_last_user_message_index(history);
+    const auto& last_user_message = history[m_last_user_message_index];
+
+    OPENVINO_ASSERT(last_user_message.contains(""content""),
+        ""Unknown chat history format: user message does not contain 'content' field."");
+
+    if (last_user_message[""content""].is_string()) {
+        detected_format = ChatHistoryFormat::STRING_CONTENT;
+    }
+
+    if (last_user_message[""content""].is_array()) {
+        for (size_t i = 0; i < last_user_message[""content""].size(); ++i) {"
+55,llama.cpp,repos/llama.cpp/src/llama-memory-recurrent.cpp,llama_memory_recurrent::state_read_data,1046,"bool llama_memory_recurrent::state_read_data(llama_io_read_i & io, uint32_t cell_count) {
+    uint32_t s_trans;
+    uint32_t n_layer;
+    io.read(&s_trans, sizeof(s_trans));
+    io.read(&n_layer, sizeof(n_layer));
+
+    if (n_layer != hparams.n_layer()) {
+        LLAMA_LOG_ERROR(""%s: mismatched layer count (%u instead of %u)\n"", __func__, n_layer, hparams.n_layer());
+        return false;
+    }
+    if (cell_count > size) {
+        LLAMA_LOG_ERROR(""%s: not enough cells in kv cache to restore state (%u > %u)\n"", __func__, cell_count, size);
+        return false;
+    }
+    if (false != (bool) s_trans) {
+        LLAMA_LOG_ERROR(""%s: incompatible s transposition\n"", __func__);
+        return false;
+    }
+
+    // For each layer, read the keys for each cell, one row is one cell, read as one contiguous block
+    for (uint32_t il = 0; il < n_layer; ++il) {
+        // skip null layers
+        if (r_l[il] == nullptr) continue;
+
+        // Read type of key
+        int32_t r_type_i_ref;
+        io.read(&r_type_i_ref, sizeof(r_type_i_ref));
+        const int32_t r_type_i = (int32_t) r_l[il]->type;
+        if (r_type_i != r_type_i_ref) {
+            LLAMA_LOG_ERROR(""%s: mismatched r type (%d != %d, layer %d)\n"", __func__, r_type_i, r_type_i_ref, il);
+            return false;
+        }
+
+        // Read row size of key
+        uint64_t r_size_row_ref;
+        io.read(&r_size_row_ref, sizeof(r_size_row_ref));
+        const size_t r_size_row = ggml_row_size(r_l[il]->type, hparams.n_embd_r());
+        if (r_size_row != r_size_row_ref) {
+            LLAMA_LOG_ERROR(""%s: mismatched r row size (%zu != %zu, layer %d)\n"", __func__, r_size_row, (size_t) r_size_row_ref, il);
+            return false;
+        }
+
+        if (cell_count) {
+            // Read and set the keys for the whole cell range
+            io.read_tensor(r_l[il], head * r_size_row, cell_count * r_size_row);"
+56,llama.cpp,repos/llama.cpp/src/llama-kv-cache.cpp,llama_kv_cache::total_size,1806,"size_t llama_kv_cache::total_size() const {
+    size_t size = 0;
+
+    for (const auto & [_, buf] : ctxs_bufs) {
+        size += ggml_backend_buffer_get_size(buf.get());
+    }
+
+    return size;
+}
+
+size_t llama_kv_cache::size_k_bytes() const {
+    size_t size_k_bytes = 0;
+
+    for (const auto & layer : layers) {
+        size_k_bytes += ggml_nbytes(layer.k);
+    }
+
+    return size_k_bytes;
+}
+
+size_t llama_kv_cache::size_v_bytes() const {
+    size_t size_v_bytes = 0;
+
+    for (const auto & layer : layers) {
+        size_v_bytes += layer.v ? ggml_nbytes(layer.v) : 0;
+    }
+
+    return size_v_bytes;
+}
+
+ggml_tensor * llama_kv_cache::build_rope_shift(
+        const llama_cparams & cparams,
+               ggml_context * ctx,
+                ggml_tensor * cur,
+                ggml_tensor * shift,
+                ggml_tensor * rot,
+                ggml_tensor * factors,
+                      float   freq_base,
+                      float   freq_scale,
+                   uint32_t   il) const {
+    const auto & n_ctx_orig = cparams.n_ctx_orig_yarn;
+
+    const auto & yarn_ext_factor  = cparams.yarn_ext_factor;
+    const auto & yarn_beta_fast   = cparams.yarn_beta_fast;
+    const auto & yarn_beta_slow   = cparams.yarn_beta_slow;"
+57,llama.cpp,repos/llama.cpp/tools/mtmd/clip.cpp,clip_model_loader::get_string,3767,"    void get_string(const std::string & key, std::string & output, bool required = true) const {
+        const int i = gguf_find_key(ctx_gguf.get(), key.c_str());
+        if (i < 0) {
+            if (required) {
+                throw std::runtime_error(""Key not found: "" + key);
+            }
+            return;
+        }
+        output = std::string(gguf_get_val_str(ctx_gguf.get(), i));
+    }
+
+    void get_arr_int(const std::string & key, std::vector<int> & output, bool required = true) const {
+        const int i = gguf_find_key(ctx_gguf.get(), key.c_str());
+        if (i < 0) {
+            if (required) {
+                throw std::runtime_error(""Key not found: "" + key);
+            }
+            return;
+        }
+        if (gguf_get_kv_type(ctx_gguf.get(), i) != GGUF_TYPE_ARRAY) {
+            throw std::runtime_error(string_format(""%s: key '%s' is not an array\n"", __func__, key.c_str()));
+        }
+        const auto type = gguf_get_arr_type(ctx_gguf.get(), i);
+        if (type != GGUF_TYPE_INT32) {
+            throw std::runtime_error(string_format(""%s: array '%s' has type %d, expected %d (GGUF_TYPE_INT32)\n"", __func__, key.c_str(), type, GGUF_TYPE_INT32));
+        }
+        const size_t n = gguf_get_arr_n(ctx_gguf.get(), i);
+        if (n > (size_t) std::numeric_limits<int>::max()) {
+            throw std::runtime_error(string_format(""%s: array '%s' is too large (%zu elements)\n"", __func__, key.c_str(), n));
+        }
+        output.resize(n);
+        const int32_t * values = (const int32_t *)gguf_get_arr_data(ctx_gguf.get(), i);
+        for (size_t j = 0; j < n; ++j) {
+            output[j] = values[j];
+        }
+    }
+
+    static void set_llava_uhd_res_candidates(clip_model & model, const int max_patches_per_side) {
+        auto & hparams = model.hparams;
+        for (int x = 1; x <= max_patches_per_side; x++) {
+            for (int y = 1; y <= max_patches_per_side; y++) {
+                if (x == 1 && y == 1) {
+                    continue; // skip the first point
+                }
+                hparams.image_res_candidates.push_back(clip_image_size{"
+58,llama.cpp,repos/llama.cpp/common/jinja/runtime.cpp,jinja::member_expression::execute_impl,798,"value member_expression::execute_impl(context & ctx) {
+    value object = this->object->execute(ctx);
+
+    value property;
+    if (this->computed) {
+        // syntax: obj[expr]
+        JJ_DEBUG(""Member expression, computing property type %s"", this->property->type().c_str());
+
+        int64_t arr_size = 0;
+        if (is_val<value_array>(object)) {
+            arr_size = object->as_array().size();
+        } else if (is_val<value_string>(object)) {
+            arr_size = object->as_string().length();
+        }
+
+        if (is_stmt<slice_expression>(this->property)) {
+            auto s = cast_stmt<slice_expression>(this->property);
+            value step_val  = s->step_expr  ? s->step_expr->execute(ctx)  : mk_val<value_int>(1);
+            value start_val = s->start_expr ? s->start_expr->execute(ctx) : (step_val->as_int() < 0 ? mk_val<value_int>(arr_size - 1) : mk_val<value_int>(0));
+            value stop_val  = s->stop_expr  ? s->stop_expr->execute(ctx)  : (step_val->as_int() < 0 ? mk_val<value_int>(-1) : mk_val<value_int>(arr_size));
+
+            // translate to function call: obj.slice(start, stop, step)
+            JJ_DEBUG(""Member expression is a slice: start %s, stop %s, step %s"",
+                     start_val->as_repr().c_str(),
+                     stop_val->as_repr().c_str(),
+                     step_val->as_repr().c_str());
+            auto slice_func = try_builtin_func(ctx, ""slice"", object);
+            func_args args(ctx);
+            args.push_back(start_val);
+            args.push_back(stop_val);
+            args.push_back(step_val);
+            return slice_func->invoke(args);
+        } else {
+            property = this->property->execute(ctx);
+        }
+    } else {
+        // syntax: obj.prop
+        if (!is_stmt<identifier>(this->property)) {
+            throw std::runtime_error(""Static member property must be an identifier"");
+        }
+        property = mk_val<value_string>(cast_stmt<identifier>(this->property)->val);
+        std::string prop = property->as_string().str();
+        JJ_DEBUG(""Member expression, object type %s, static property '%s'"", object->type().c_str(), prop.c_str());
+
+        // behavior of jinja2: obj having prop as a built-in function AND 'prop', as an object key,"
+59,InferLLM,repos/InferLLM-main/InferLLM-main/src/graph/graph_imp.cpp,inferllm::Graph::make_graph,6,"std::shared_ptr<Graph> Graph::make_graph(
+        UserConfig model_config, Device* device, const std::string& name) {
+    if (name == ""llama"") {
+        return std::make_shared<GgmlLlamaGraph>(model_config, device, name);
+    } else if (name == ""chatglm"") {
+        return std::make_shared<ChatGLMGraph>(model_config, device, name);
+    } else if (name == ""chatglm2"") {
+        return std::make_shared<ChatGLMGraph2>(model_config, device, name);
+    } else if (name == ""chatglm3"") {
+        return std::make_shared<ChatGLMGraph3>(model_config, device, name);
+    } else if (name == ""baichuan"" || name == ""llama2"") {
+        return std::make_shared<LlamaLikeGraph>(model_config, device, name);
+    } else {
+        INFER_ASSERT(0, ""unsupported model."");
+    }
+}"
+60,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/ort_genai_c.cpp,OgaGenerator_SetHiddenStates,635,"OgaResult* OGA_API_CALL OgaGenerator_SetHiddenStates(OgaGenerator* generator, OgaTensor* hidden_states) {
+  OGA_TRY
+  generator->SetHiddenStates(hidden_states->shared_from_this());
+  return nullptr;
+  OGA_CATCH
+}
+
+OgaResult* OGA_API_CALL OgaGenerator_SetRuntimeOption(OgaGenerator* generator, const char* key, const char* value) {
+  OGA_TRY
+  generator->SetRuntimeOption(key, value);
+  return nullptr;
+  OGA_CATCH
+}
+
+namespace {
+
+/**
+ * \brief Returns a copy of the model output identified by the given name as an OgaTensor on CPU. The buffer is owned by returned OgaTensor
+ *       and will be released when the OgaTensor is destroyed
+ * \param[in] oga_generator The generator to run the GetInput or GetOutput method on the name provided and the out pointer to store the output.
+ * \param[in] name The name of the tensor.
+ * \param[in] is_input Whether the tensor name is for an input or not.
+ * \param[out] out The returned OgaTensor.
+ * \return OgaResult containing the error message if the computation failed.
+ */
+OgaResult* OGA_API_CALL OgaGenerator_GetInputOutput(const OgaGenerator* oga_generator, const char* name, bool is_input, OgaTensor** out) {
+  OGA_TRY
+  auto& generator = *reinterpret_cast<const Generators::Generator*>(oga_generator);
+  auto* ortvalue = is_input ? generator.state_->GetInput(name) : generator.state_->GetOutput(name);
+  if (ortvalue == nullptr)
+    throw std::runtime_error(std::string(""Generator "") + (is_input ? ""input '"" : ""output '"") + name + ""' was not found."");
+
+  auto type_info = ortvalue->GetTensorTypeAndShapeInfo();
+  auto ortvalue_clone = OrtValue::CreateTensor(generator.model_->allocator_cpu_, type_info->GetShape(), type_info->GetElementType());
+
+  // Copy data to ortvalue_clone
+  bool is_cpu = ortvalue->GetTensorMemoryInfo().GetDeviceType() == OrtMemoryInfoDeviceType_CPU;
+  auto tensor_span = Generators::ByteWrapTensor(is_cpu ? *Generators::GetDeviceInterface(Generators::DeviceType::CPU) : *generator.model_->p_device_, *ortvalue);
+  auto copy_span = Generators::ByteWrapTensor(*Generators::GetDeviceInterface(Generators::DeviceType::CPU), *ortvalue_clone);
+  copy_span.CopyFrom(tensor_span);
+
+  auto tensor = std::make_shared<Generators::Tensor>(std::move(ortvalue_clone));
+  *out = ReturnShared<OgaTensor>(tensor);
+  return nullptr;
+  OGA_CATCH"
+61,openvino.genai,repos/openvino-genai/openvino.genai-master/src/cpp/src/image_generation/schedulers/ddim.cpp,ov::genai::DDIMScheduler::get_timesteps,201,"std::vector<int64_t> DDIMScheduler::get_timesteps() const {
+    OPENVINO_ASSERT(!m_timesteps.empty(), ""'timesteps' have not yet been set."");
+
+    return m_timesteps;
+}
+
+float DDIMScheduler::get_init_noise_sigma() const {
+    return 1.0f;
+}
+
+void DDIMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) {
+    return;
+}
+
+void DDIMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
+    float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
+    float sqrt_one_minus_alpha_prod = std::sqrt(1.0 - m_alphas_cumprod[latent_timestep]);
+
+    float * init_latent_data = init_latent.data<float>();
+    const float * noise_data = noise.data<float>();
+
+    for (size_t i = 0; i < init_latent.get_size(); ++i) {
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
+    }
+}
+
+
+} // namespace genai
+} // namespace ov"
+62,openvino.genai,repos/openvino-genai/openvino.genai-master/src/python/py_utils.cpp,(anonymous namespace)::GilSafeGeneratorWrapper::randn_tensor,57,"    ov::Tensor randn_tensor(const ov::Shape& shape) override {
+        return m_impl->randn_tensor(shape);
+    }
+    void seed(size_t new_seed) override {
+        m_impl->seed(new_seed);
+    }
+};
+
+// Permissive mapping: any value outside {RUNNING, CANCEL, TOOL_CALL_STOP} (including legacy
+// `True`/non-zero ints from older Python callbacks that returned bool) is treated as STOP so
+// we don't break user code that returned bools to mean ""stop streaming"".
+ov::genai::StreamingStatus map_py_status(const std::optional<uint16_t>& result) {
+    if (!result.has_value())
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::RUNNING))
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::CANCEL))
+        return ov::genai::StreamingStatus::CANCEL;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::TOOL_CALL_STOP))
+        return ov::genai::StreamingStatus::TOOL_CALL_STOP;
+    return ov::genai::StreamingStatus::STOP;
+}
+
+}  // namespace
+
+namespace ov::genai::pybind::utils {
+
+py::str handle_utf8(const std::string& text) {
+    // pybind11 decodes strings similar to Pythons's
+    // bytes.decode('utf-8'). It raises if the decoding fails.
+    // generate() may return incomplete Unicode points if max_new_tokens
+    // was reached. Replace such points with � instead of raising an exception
+    PyObject* py_s = PyUnicode_DecodeUTF8(text.data(), text.length(), ""replace"");
+    return py::reinterpret_steal<py::object>(py_s);
+}
+
+py::list handle_utf8(const std::vector<std::string>& decoded_res) {
+    py::list res;
+    for (const auto& s : decoded_res) {
+        py::str r = handle_utf8(s);
+        res.append(r);
+    }
+    return res;
+}"
+63,llama.cpp,repos/llama.cpp/common/chat-auto-parser-helpers.cpp,common_prefix_len,69,"static size_t common_prefix_len(const std::string & left, const std::string & right) {
+    size_t prefix_len = 0;
+    size_t min_len    = std::min(left.length(), right.length());
+    while (prefix_len < min_len && left[prefix_len] == right[prefix_len]) {
+        prefix_len++;
+    }
+    return prefix_len;
+}
+
+static size_t common_suffix_len(const std::string & left, const std::string & right) {
+    size_t suffix_len = 0;
+    size_t min_len    = std::min(left.length(), right.length());
+    while (suffix_len < min_len && left[left.length() - 1 - suffix_len] == right[right.length() - 1 - suffix_len]) {
+        suffix_len++;
+    }
+    return suffix_len;
+}
+
+diff_split calculate_diff_split(const std::string & left, const std::string & right) {
+    diff_split result;
+
+    auto left_seg = segmentize_markers(left);
+    auto right_seg = segmentize_markers(right);
+
+    if (left_seg.empty()) {
+        result.right = right;
+        return result;
+    }
+    if (right_seg.empty()) {
+        result.left = left;
+        return result;
+    }
+
+    auto left_start = left_seg.begin();
+    auto left_end = --left_seg.end();
+    auto right_start = right_seg.begin();
+    auto right_end = --right_seg.end();
+
+    auto test = [&] () {
+        return left_start != left_end && right_start != right_end;
+    };
+
+    bool left_fully_consumed = false;
+    bool right_fully_consumed = false;"
+64,DeepSpeed-FastGen,repos/deepspeed-fastgen/DeepSpeed-master/csrc/aio/py_lib/deepspeed_py_io_handle.cpp,deepspeed_io_handle_t::_stop_threads,192,"void deepspeed_io_handle_t::_stop_threads()
+{
+    std::lock_guard<std::mutex> lock(_handle_mutex);
+    assert(0 == _num_pending_ops);
+    for (auto& ctxt : _thread_contexts) {
+        {
+            std::lock_guard<std::mutex> lock(ctxt->_work_sync._mutex);
+            ctxt->_time_to_exit = true;
+        }
+        ctxt->_work_sync._cond_var.notify_one();
+    }
+}
+
+int deepspeed_io_handle_t::wait()
+{
+    std::lock_guard<std::mutex> lock(_handle_mutex);
+    return _wait_locked();
+}
+
+int deepspeed_io_handle_t::_wait_locked()
+{
+    assert(_num_pending_ops > 0);
+    auto num_completed_ops = 0;
+
+    while (_num_pending_ops > 0) {
+        auto completed_op = _wait_for_aio_work();
+
+        if (completed_op->_validate) { completed_op->validate(); }
+
+        completed_op->finish();
+
+        if (!completed_op->_filename.empty()) { close(completed_op->_fd); }
+
+        --_num_pending_ops;
+        ++num_completed_ops;
+    }
+
+    return num_completed_ops;
+}
+
+bool deepspeed_io_handle_t::_is_valid_parallel_aio_op(const bool read_op, const int64_t num_bytes)
+{
+    const auto op_string = read_op ? ""Read"" : ""Write"";
+    if (num_bytes % get_intra_op_parallelism()) {
+        std::cout << ""deepspeed_aio failure: parallel "" << op_string << "" num_bytes = "" << num_bytes"
+65,llama.cpp,repos/llama.cpp/src/llama-vocab.cpp,llm_tokenizer_ugm_session::xcda_array_view::get_value,1133,"        uint32_t get_value(size_t index) {
+            uint32_t packed_node = get_node(index);
+            return packed_node & ((1U << 31) - 1);
+        }
+    private:
+        uint32_t get_node(size_t index) {
+            if (index >= xcda_array_size) {
+                throw std::runtime_error(""Index out of array bounds in XCDA array!"");
+            }
+            return xcda_array[index];
+        }
+        const uint32_t * xcda_array;
+        size_t xcda_array_size;
+    };
+
+    // this structure stores the best tokenization so far at input_offset
+    struct best_tokenization {
+        llama_token token_id;
+        size_t input_offset;
+        double score_sum;
+    };
+
+    struct normalization_result normalize_prefix(const std::string & input, size_t input_offset) {
+        if (input_offset == input.size()) {
+            return { &input[input_offset], 0, 0 };
+        }
+
+        // if input prefix matches some user-defined token return this token as normalization result
+        auto user_defined_token_match =
+           tokenizer.user_defined_token_matcher.get_longest_prefix(&input[input_offset], input.size() - input_offset);
+        if (user_defined_token_match.second > 0) {
+            return { &input[input_offset], user_defined_token_match.second, user_defined_token_match.second };
+        }
+
+        size_t longest_prefix_length = 0;
+        size_t longest_prefix_offset = 0;
+
+        if (tokenizer.xcda_array_size > 0) {
+            struct xcda_array_view xcda_view(tokenizer.xcda_array, tokenizer.xcda_array_size);
+
+            // Find the longest normalized sequence matching the input prefix by walking
+            // the XOR-compressed compact double array (XCDA) starting from the root node
+            // We find the index of the next node by calculating BASE[s] ^ c where s is
+            // the index of the previous node and c is a numerical character value
+            uint32_t node_index = 0;"
+66,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/qnn/interface.cpp,Generators::QNN::QnnMemory::GetType,31,"  const char* GetType() const override { return device_label; }
+  void AllocateCpu() override {}      // Nothing to do, device memory is CPU accessible
+  void CopyDeviceToCpu() override {}  // Nothing to do, device memory is CPU accessible
+  void CopyCpuToDevice() override {}  // Nothing to do, device memory is CPU accessible
+  void CopyFrom(size_t begin_dest, DeviceBuffer& source, size_t begin_source, size_t size_in_bytes) override {
+    CopyThroughCpu(*this, begin_dest, source, begin_source, size_in_bytes);
+  }
+
+  void Zero() override {
+    memset(p_device_, 0, size_in_bytes_);
+  }
+
+  bool owned_;
+};
+
+struct QnnInterfaceBase : DeviceInterface {
+  std::unique_ptr<OrtMemoryInfo> GetMemoryInfo() const override {
+    // Note: ""QnnHtpShared"" allocator is the correct name for both HTP and GPU backends. Eventually, the plan is to
+    // migrate to ""QnnShared"".
+    return OrtMemoryInfo::Create(""QnnHtpShared"", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemType::OrtMemTypeDefault);
+  }
+
+  void InitOrt(const OrtApi& /*api*/, Ort::Allocator& allocator) override {
+    assert(!ort_allocator_);
+    ort_allocator_ = &allocator;
+  }
+
+  Ort::Allocator& GetAllocator() override {
+    return *ort_allocator_;
+  }
+
+  std::shared_ptr<DeviceBuffer> AllocateBase(size_t size) override {
+    return std::make_shared<QnnMemory>(size);
+  }
+
+  std::shared_ptr<DeviceBuffer> WrapMemoryBase(void* p, size_t size) override {
+    return std::make_shared<QnnMemory>(p, size);
+  }
+
+  std::unique_ptr<Search> CreateGreedy(const GeneratorParams& params) override { return std::make_unique<GreedySearch_Cpu>(params); }
+  std::unique_ptr<Search> CreateBeam(const GeneratorParams& params) override { return std::make_unique<BeamSearch_Cpu>(params); }
+
+  void Synchronize() override {}  // Nothing to do
+};"
+67,DeepSpeed-FastGen,repos/deepspeed-fastgen/DeepSpeed-master/csrc/aio/py_lib/deepspeed_aio_op_desc.cpp,warn_consumer_ssd_writes,25,"void warn_consumer_ssd_writes() noexcept
+{
+    std::call_once(write_warning_flag, []() noexcept {
+        try {
+            // Route through DeepSpeed's Python logger. Acquire the GIL since this may be
+            // invoked from a non-Python thread. The Python marker keeps the warning
+            // process-wide even when async_io and gds load separate extension DSOs.
+            pybind11::gil_scoped_acquire acquire;
+            auto utils = pybind11::module_::import(""deepspeed.utils"");
+            if (pybind11::hasattr(utils, write_warning_emitted_attr)) { return; }
+
+            utils.attr(write_warning_emitted_attr) = pybind11::bool_(true);
+            try {
+                utils.attr(""logger"").attr(""warning"")(write_warning_message);
+            } catch (pybind11::error_already_set& error) {
+                error.discard_as_unraisable(""DeepSpeed NVMe write endurance warning"");
+            }
+        } catch (pybind11::error_already_set& error) {
+            error.discard_as_unraisable(""DeepSpeed NVMe write endurance warning"");
+        } catch (...) {
+            // A best-effort warning must never prevent or alter an I/O operation.
+        }
+    });
+}
+
+io_op_desc_t::io_op_desc_t(const bool read_op,
+                           const torch::Tensor& buffer,
+                           const int fd,
+                           const char* filename,
+                           const int intra_op_parallelism,
+                           const bool validate,
+                           const int64_t file_offset)
+    : _read_op(read_op),
+      _buffer(buffer),
+      _fd(fd),
+      _filename((filename == nullptr) ? std::string() : filename),
+      _file_offset(file_offset),
+      _intra_op_parallelism(intra_op_parallelism),
+      _num_bytes_per_thread(static_cast<int64_t>(buffer.nbytes()) / intra_op_parallelism),
+      _validate(validate)
+{
+    if (validate) { assert(nullptr != filename); }
+    if (!read_op) { warn_consumer_ssd_writes(); }
+}"
+68,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/qnn/interface.cpp,Generators::IsQNNStatefulModel,134,"bool IsQNNStatefulModel(const Model& model) {
+  const auto& provider_options = model.config_->model.decoder.session_options.provider_options;
+  for (const auto& po : provider_options) {
+    if (po.name == ""QNN"") {
+      for (const auto& option : po.options) {
+        // For QNN, if session option 'genie_model' is set to true, the session will encapsulate
+        // a stateful model, so KVCache will be managed internally.
+        if (option.first == ""genie_model"") {
+          std::string lower_value(option.second);
+          std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(),
+                         [](unsigned char c) { return static_cast<unsigned char>(std::tolower(c)); });
+          return lower_value == ""true"";
+        }
+      }
+    }
+  }
+  return false;
+}
+
+}  // namespace Generators"
+69,llama.cpp,repos/llama.cpp/tools/mtmd/mtmd.cpp,mtmd_serialization::write,86,"void mtmd_serialization::write<std::string>(std::string value) {
+    write<uint64_t>(value.size());
+    data.insert(data.end(), value.begin(), value.end());
+}
+template <>
+std::string mtmd_serialization::read<std::string>() {
+    uint64_t len = read<uint64_t>();
+    if (read_pos + len > data.size()) {
+        throw std::runtime_error(""read_string OOB"");
+    }
+    std::string str(data.data() + read_pos, len);
+    read_pos += len;
+    return str;
+}
+
+// only mtmd.cpp needs these, so they're implemented here rather than in clip-impl.h
+void clip_image_f32::serialize(mtmd_serialization & ser) const {
+    // remember to bump MTMD_SERIALIZATION_VERSION if this is changed
+    // note: buf is intentionally NOT serialized; the loaded clip_image_f32 will always be a placeholder
+    ser.write(add_viewsep);
+    ser.write(add_newline);
+    ser.write((int32_t)nx_);
+    ser.write((int32_t)ny_);
+}
+void clip_image_f32::deserialize(mtmd_serialization & ser) {
+    add_viewsep = ser.read<bool>();
+    add_newline = ser.read<bool>();
+    nx_ = ser.read<int32_t>();
+    ny_ = ser.read<int32_t>();
+    buf.clear(); // always a placeholder after loading
+}
+
+void clip_image_f32_batch::serialize(mtmd_serialization & ser) const {
+    // remember to bump MTMD_SERIALIZATION_VERSION if this is changed
+    ser.write(is_audio);
+    ser.write<uint64_t>(entries.size());
+    for (const auto & entry : entries) {
+        entry.serialize(ser);
+    }
+}
+void clip_image_f32_batch::deserialize(mtmd_serialization & ser) {
+    is_audio = ser.read<bool>();
+    uint64_t n = ser.read<uint64_t>();
+    constexpr size_t min_entry_bytes = sizeof(uint8_t) * 2 + sizeof(int32_t) * 2;
+    if (n > (ser.data.size() - ser.read_pos) / min_entry_bytes) {"
+70,llama.cpp,repos/llama.cpp/src/models/gemma3n.cpp,llama_model_gemma3n::build_arch_graph,80,"std::unique_ptr<llm_graph_context> llama_model_gemma3n::build_arch_graph(const llm_graph_params & params) const {
+    return std::make_unique<graph>(*this, params);
+}
+
+// get 2D slice view from a 3D tensor, the idx corresponds to the 3rd dim
+static ggml_tensor * ggml_view_2d_slice(ggml_context * ctx0, ggml_tensor * x, int idx) {
+    GGML_ASSERT(idx < (int) x->ne[2]);
+    return ggml_view_2d(ctx0, x, x->ne[0], x->ne[1], ggml_row_size(x->type, x->ne[0]),
+                        idx * x->ne[0] * x->ne[1] * ggml_element_size(x));
+}
+
+llama_model_gemma3n::graph::graph(const llama_model & model, const llm_graph_params & params) :
+    llm_graph_context(params),
+    model(model),
+    n_embd_head(model.hparams.n_embd_head_k()),
+    n_embd_altup(model.hparams.n_embd_altup),
+    n_altup(model.hparams.n_altup),
+    i_altup_act(model.hparams.i_altup_act) {
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    // important: do not normalize weights for raw embeddings input (i.e. encoded image embeddings)
+    inpL = ggml_scale(ctx0, inpL, ubatch.token ? sqrtf(n_embd) : 1.0f);
+    cb(inpL, ""inp_scaled"", -1);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = build_inp_pos();
+
+    // TODO: is causal == true correct? might need some changes
+    auto * inp_attn = build_attn_inp_kv_iswa();
+
+    ggml_tensor * inp_per_layer = build_inp_per_layer();
+    ggml_build_forward_expand(gf, inp_per_layer);
+
+    // inp_per_layer now has shape: [n_embd_altup, n_tokens, n_layer]
+    inp_per_layer = project_per_layer_inputs(inpL, inp_per_layer);
+
+    // inpL now has only 1 altup, project it to the rest of the altups
+    // these ""added"" altups will be concat to the last dim of inpL
+    {
+        ggml_tensor * target_magnitude = calc_magnitude(inpL);
+        ggml_tensor * inp_repeated     = ggml_repeat_4d(ctx0, inpL, n_embd, n_tokens, n_altup - 1, 1);
+        ggml_tensor * altup_added ="
+71,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/models/model.cpp,Generators::Tokenizer::GetEotTokenId,352,"int32_t Tokenizer::GetEotTokenId() const {
+  if (!eot_token_id_) throw std::runtime_error(""eot_token_id is not defined for this model"");
+  return *eot_token_id_;
+}
+
+int32_t Tokenizer::GetBorTokenId() const {
+  if (!bor_token_id_) throw std::runtime_error(""bor_token_id is not defined for this model"");
+  return *bor_token_id_;
+}
+
+int32_t Tokenizer::GetEorTokenId() const {
+  if (!eor_token_id_) throw std::runtime_error(""eor_token_id is not defined for this model"");
+  return *eor_token_id_;
+}
+
+std::unique_ptr<TokenizerStream> Tokenizer::CreateStream() const {
+  return std::make_unique<TokenizerStream>(*this);
+}
+
+void Tokenizer::UpdateOptions(const char* const* keys, const char* const* values, size_t num_options) {
+  // Tap into ORT Extensions API
+  CheckResult(OrtxUpdateTokenizerOptions(tokenizer_, const_cast<const char**>(keys), const_cast<const char**>(values), num_options));
+}
+
+std::vector<int32_t> Tokenizer::Encode(const char* text) const {
+  OrtxPtr<OrtxTokenId2DArray> ids;
+  CheckResult(OrtxTokenize(tokenizer_, &text, 1, ids.Address()));
+
+  const extTokenId_t* tokens;
+  size_t count;
+  CheckResult(OrtxTokenId2DArrayGetItem(ids, 0, &tokens, &count));
+  return {tokens, tokens + count};
+}
+
+std::string Tokenizer::Decode(std::span<const int32_t> tokens) const {
+  OrtxPtr<OrtxStringArray> ortx_string_array;
+  CheckResult(OrtxDetokenize1D(tokenizer_, reinterpret_cast<const uint32_t*>(tokens.data()), tokens.size(), ortx_string_array.Address()));
+
+  const char* string;
+  CheckResult(OrtxStringArrayGetItem(ortx_string_array, 0, &string));
+  return string;
+}
+
+std::string Tokenizer::ApplyChatTemplate(const char* template_str, const char* messages, const char* tools, bool add_generation_prompt) const {
+  ort_extensions::OrtxObjectPtr<OrtxTensorResult> templated_text;"
+72,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/engine/engine.cpp,Generators::Engine::MarkUnhealthyAndThrow,309,"[[noreturn]] void Engine::MarkUnhealthyAndThrow(
+    StepOutcomeKind outcome,
+    StepTransactionId transaction_id,
+    const void* request_id,
+    std::string message,
+    std::exception_ptr error) {
+  health_ = EngineHealth::Unhealthy;
+  if (outcome == StepOutcomeKind::FatalExecutionFailure ||
+      outcome == StepOutcomeKind::ExecutionContractFailure) {
+    ++transaction_metrics_.fatal_execution_failures;
+  }
+  fatal_error_ = std::make_exception_ptr(EngineStepError{
+      {outcome, transaction_id, request_id},
+      AddExceptionCause(std::move(message), error),
+  });
+  std::rethrow_exception(fatal_error_);
+}
+
+bool Engine::HasPendingRequests() const {
+  return ready_request_index_ < ready_requests_.size() ||
+         scheduler_->HasPendingRequests();
+}
+
+}  // namespace Generators"
+73,onnxruntime-genai,repos/onnxruntime-genai/onnxruntime-genai-main/src/qnn/interface.cpp,Generators::QNN::QnnInterfaceBase::CreateGreedy,70,"  std::unique_ptr<Search> CreateGreedy(const GeneratorParams& params) override { return std::make_unique<GreedySearch_Cpu>(params); }
+  std::unique_ptr<Search> CreateBeam(const GeneratorParams& params) override { return std::make_unique<BeamSearch_Cpu>(params); }
+
+  void Synchronize() override {}  // Nothing to do
+};
+
+struct HtpInterfaceImpl : QnnInterfaceBase {
+  HtpInterfaceImpl() {}
+  DeviceType GetType() const override { return DeviceType::QnnHtp; }
+
+  void ShapeInitSessionProviderOptions(Config::ProviderOptions& init_options,
+                                       const Config::ProviderOptions* user_options) const override {
+    // NOTE: QNN EP currently exposes two allocators (HTP shared memory allocator and DX12 shared memory allocator), with
+    //       the first only being supported with the HTP backend and the second only supported by the GPU backend.
+    //       As a result, note the following:
+    //         1.) We only look to copy over the ""enable_htp_shared_memory_allocator"" option here, and likewise only look for
+    //             ""enable_dx12_shared_memory_allocator"" in `GpuInterfaceImpl::ShapeInitSessionProviderOptions`.
+    //         2.) Oga keeps one global allocator for HTP and one for GPU, each of which is created once. Because each device
+    //             only supports once allocator, the fact that each device's chosen allocator is sticky is ok.
+    if (user_options) {
+      for (const auto& opt : user_options->options) {
+        if (opt.first == ""enable_htp_shared_memory_allocator"") {
+          init_options.options.emplace_back(opt);
+        }
+      }
+    }
+
+    init_options.device_filtering_options = Generators::DeviceFilteringOptions{OrtHardwareDeviceType_NPU};
+  }
+};
+
+struct GpuInterfaceImpl : QnnInterfaceBase {
+  GpuInterfaceImpl() {}
+  DeviceType GetType() const override { return DeviceType::QnnGpu; }
+
+  void ShapeInitSessionProviderOptions(Config::ProviderOptions& init_options,
+                                       const Config::ProviderOptions* user_options) const override {
+    if (user_options) {
+      for (const auto& opt : user_options->options) {
+        if (opt.first == ""enable_dx12_shared_memory_allocator"") {
+          init_options.options.emplace_back(opt);
+        }
+      }
+    }"
+74,llama.cpp,repos/llama.cpp/tools/mtmd/clip.cpp,clip_ctx::proj_type,240,"    projector_type proj_type() const {
+        return model.proj_type;
+    }
+};
+
+//
+// clip_graph
+//
+
+clip_graph::clip_graph(clip_ctx * ctx, const clip_image_f32 & img) :
+        model(ctx->model),
+        hparams(model.hparams),
+        proj_type(ctx->proj_type()),
+        img(img),
+        patch_size(hparams.patch_size),
+        n_patches_x(img.nx() / patch_size),
+        n_patches_y(img.ny() / patch_size),
+        n_patches(n_patches_x * n_patches_y),
+        n_embd(hparams.n_embd),
+        n_head(hparams.n_head),
+        n_head_kv(hparams.n_head_kv),
+        d_head(hparams.n_embd_head > 0 ? hparams.n_embd_head : (n_head > 0 ? n_embd / n_head : 0)),
+        n_layer(hparams.n_layer),
+        n_mmproj_embd(clip_n_mmproj_embd(ctx)),
+        eps(hparams.eps),
+        kq_scale(d_head > 0 ? 1.0f / sqrtf((float)d_head) : 0.0f),
+        flash_attn_type(ctx->flash_attn_type) {
+    struct ggml_init_params params = {
+        /*.mem_size   =*/ ctx->buf_compute_meta.size(),
+        /*.mem_buffer =*/ ctx->buf_compute_meta.data(),
+        /*.no_alloc   =*/ true,
+    };
+    ctx0_ptr.reset(ggml_init(params));
+    ctx0 = ctx0_ptr.get();
+    gf = ggml_new_graph_custom(ctx0, ctx->max_nodes, false);
+}
+
+clip_graph::clip_graph(const clip_graph & parent) :
+        model(parent.model),
+        hparams(parent.hparams),
+        proj_type(parent.proj_type),
+        img(parent.img),
+        patch_size(parent.patch_size),
+        n_patches_x(parent.n_patches_x),
+        n_patches_y(parent.n_patches_y),"
+75,llama.cpp,repos/llama.cpp/src/models/xverse.cpp,llama_model_xverse::load_arch_tensors,14,"void llama_model_xverse::load_arch_tensors(llama_model_loader &) {
+    LLAMA_LOAD_LOCALS;
+
+    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, ""weight""), {n_embd, n_vocab}, 0);
+
+    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, ""weight""), {n_embd}, 0);
+    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      ""weight""), {n_embd, n_vocab}, 0);
+
+    for (int i = 0; i < n_layer; ++i) {
+        auto & layer = layers[i];
+
+        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, ""weight"", i), {n_embd}, 0);
+
+        create_tensor_qkv(layer, i, n_embd, n_embd, n_embd_gqa, n_embd_gqa, 0);
+        layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, ""weight"", i), {n_embd, n_embd}, 0);
+
+        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, ""weight"", i), {n_embd}, 0);
+        layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, ""weight"", i), {n_embd,   n_ff}, 0);
+        layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, ""weight"", i), {  n_ff, n_embd}, 0);
+        layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   ""weight"", i), {n_embd,   n_ff}, 0);
+    }
+}
+
+std::unique_ptr<llm_graph_context> llama_model_xverse::build_arch_graph(const llm_graph_params & params) const {
+    return std::make_unique<graph>(*this, params);
+}
+
+llama_model_xverse::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(n_embd_head == n_rot);
+
+    ggml_tensor * cur;
+    ggml_tensor * inpL;
+
+    inpL = build_inp_embd(model.tok_embd);
+
+    // inp_pos - contains the positions
+    ggml_tensor * inp_pos = build_inp_pos();
+
+    auto * inp_attn = build_attn_inp_kv();
+
+    ggml_tensor * inp_out_ids = build_inp_out_ids();"
+76,llama.cpp,repos/llama.cpp/src/llama-model-saver.cpp,llama_model_saver::llama_model_saver,44,"llama_model_saver::llama_model_saver(enum llm_arch arch, struct gguf_context * gguf_ctx) :
+        gguf_ctx(gguf_ctx == nullptr ? gguf_init_empty() : gguf_ctx), gguf_ctx_owned(gguf_ctx == nullptr), model(nullptr), llm_kv(arch) {}
+
+llama_model_saver::~llama_model_saver() {
+    if (gguf_ctx_owned) {
+        gguf_free(gguf_ctx);
+    }
+}
+
+void llama_model_saver::add_kv(const enum llm_kv key, const uint32_t value) {
+    gguf_set_val_u32(gguf_ctx, llm_kv(key).c_str(), value);
+}
+
+void llama_model_saver::add_kv(const enum llm_kv key, const int32_t value) {
+    gguf_set_val_i32(gguf_ctx, llm_kv(key).c_str(), value);
+}
+
+void llama_model_saver::add_kv(const enum llm_kv key, const float value) {
+    gguf_set_val_f32(gguf_ctx, llm_kv(key).c_str(), value);
+}
+
+void llama_model_saver::add_kv(const enum llm_kv key, const bool value) {
+    gguf_set_val_bool(gguf_ctx, llm_kv(key).c_str(), value);
+}
+
+void llama_model_saver::add_kv(const enum llm_kv key, const char * value) {
+    gguf_set_val_str(gguf_ctx, llm_kv(key).c_str(), value);
+}
+
+[[noreturn]]
+void llama_model_saver::add_kv(const enum llm_kv key, const char value) {
+    GGML_UNUSED(key);
+    GGML_UNUSED(value);
+    GGML_ABORT(""fatal error""); // this should never be called, only needed to make the template below compile
+}
+
+template <typename Container>
+void llama_model_saver::add_kv(const enum llm_kv key, const Container & value, const bool per_layer) {
+    GGML_ASSERT(model != nullptr || !per_layer);
+    const size_t n_values = per_layer ? size_t(model->hparams.n_layer()) : value.size();
+    GGML_ASSERT(n_values <= value.size());
+
+    if (n_values == 0) {
+        return;
+    }"
+77,llama.cpp,repos/llama.cpp/src/models/llada-moe.cpp,llama_model_llada_moe::load_arch_tensors,16,"void llama_model_llada_moe::load_arch_tensors(llama_model_loader &) {
+    LLAMA_LOAD_LOCALS;
+
+    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, ""weight""), {n_embd, n_vocab}, 0);
+
+    // output
+    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, ""weight""), {n_embd}, 0);
+    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      ""weight""), {n_embd, n_vocab}, 0);
+
+    GGML_ASSERT(n_expert > 0 && ""n_expert must be > 0 for llada-moe"");
+    GGML_ASSERT(n_expert_used > 0 && ""n_expert_used must be > 0 for llada-moe"");
+
+    for (int i = 0; i < n_layer; ++i) {
+        auto & layer = layers[i];
+
+        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, ""weight"", i), {n_embd}, 0);
+
+        create_tensor_qkv(layer, i, n_embd, n_embd, n_embd_gqa, n_embd_gqa, 0);
+        layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, ""weight"", i), {n_embd, n_embd}, 0);
+        layer.attn_q_norm = create_tensor(tn(LLM_TENSOR_ATTN_Q_NORM, ""weight"", i), {n_embd_head_k}, 0);
+        layer.attn_k_norm = create_tensor(tn(LLM_TENSOR_ATTN_K_NORM, ""weight"", i), {n_embd_head_k}, 0);
+
+        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, ""weight"", i), {n_embd}, 0);
+
+        layer.ffn_gate_inp = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP, ""weight"", i), {n_embd, n_expert}, 0);
+
+        const int64_t n_ff_exp = hparams.n_ff_exp ? hparams.n_ff_exp : n_ff / n_expert_used;
+
+        layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXPS, ""weight"", i), {  n_embd, n_ff_exp, n_expert}, 0);
+        layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXPS, ""weight"", i), {n_ff_exp,   n_embd, n_expert}, 0);
+        layer.ffn_up_exps   = create_tensor(tn(LLM_TENSOR_FFN_UP_EXPS,   ""weight"", i), {  n_embd, n_ff_exp, n_expert}, 0);
+    }
+}
+
+std::unique_ptr<llm_graph_context> llama_model_llada_moe::build_arch_graph(const llm_graph_params & params) const {
+    return std::make_unique<graph>(*this, params);
+}
+
+llama_model_llada_moe::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(n_embd_head == n_rot);
+
+    ggml_tensor * cur;"
+78,gemma.cpp,repos/gemma.cpp/gemma/configs.cc,gcpp::ConfigPaliGemma2_10B_224,195,"static ModelConfig ConfigPaliGemma2_10B_224() {
+  ModelConfig config = ConfigGemma2_9B();
+  config.display_name = ""PaliGemma2_10B_224"";
+  config.model = Model::PALIGEMMA2_10B_224;
+  config.wrapping = PromptWrapping::PALIGEMMA;
+  AddVitConfig(config);
+  return config;
+}
+
+static ModelConfig ConfigPaliGemma2_10B_448() {
+  ModelConfig config = ConfigGemma2_9B();
+  config.display_name = ""PaliGemma2_10B_448"";
+  config.model = Model::PALIGEMMA2_10B_448;
+  config.wrapping = PromptWrapping::PALIGEMMA;
+  AddVitConfig(config, /*image_size=*/448);
+  return config;
+}
+
+static ModelConfig ConfigBaseGemmaV3() {
+  ModelConfig config = ConfigNoSSM();
+  config.att_cap = 0.0f;
+  config.final_cap = 0.0f;
+  config.eos_id = 1;
+  config.secondary_eos_id = 106;
+  return config;
+}
+
+// 1B does not include a vision encoder.
+static LayerConfig LayerConfigGemma3_1B_LM(size_t model_dim) {
+  LayerConfig config;
+  config.model_dim = model_dim;
+  config.ff_hidden_dim = 6912;
+  config.heads = 4;
+  config.kv_heads = 1;
+  config.qkv_dim = 256;
+  config.optimized_gating = true;
+  config.post_norm = PostNormType::Scale;
+  config.use_qk_norm = true;
+  return config;
+}
+
+static ModelConfig ConfigGemma3_1B() {
+  ModelConfig config = ConfigBaseGemmaV3();
+  config.display_name = ""Gemma3_1B"";
+  config.model = Model::GEMMA3_1B;"
+79,llama.cpp,repos/llama.cpp/ggml/src/ggml-opt.cpp,ggml_opt_optimizer_name,1085,"GGML_API const char * ggml_opt_optimizer_name(enum ggml_opt_optimizer_type o) {
+    switch (o) {
+        case GGML_OPT_OPTIMIZER_TYPE_ADAMW:
+            return ""adamw"";
+        case GGML_OPT_OPTIMIZER_TYPE_SGD:
+            return ""sgd"";
+        default:
+            return ""undefined"";
+    };
+}"
+80,openvino.genai,repos/openvino-genai/openvino.genai-master/src/cpp/src/continuous_batching/cache/cache_eviction.cpp,ov::genai::CacheEvictionAlgorithm::remove_scores_of_evicted_blocks,521,"    void CacheEvictionAlgorithm::remove_scores_of_evicted_blocks(const std::vector<std::size_t> &evicted_block_indices,
+                                                                 size_t decoder_layer_idx) {
+        m_score_manager.remove_scores(evicted_block_indices, decoder_layer_idx);
+    }
+
+    void CacheEvictionAlgorithm::register_block_diversity(const BlockDiversityForEachDecoderLayer& block_diversities_for_all_decoder_layers) {
+        OPENVINO_ASSERT(m_last_block_diversity.empty(), ""CacheEvictionAlgorithm already has block_diversity, must evict before new diversity is registered"");
+        OPENVINO_ASSERT(block_diversities_for_all_decoder_layers.size() == m_num_decoder_layers);
+        m_last_block_diversity.resize(m_num_decoder_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_decoder_layers; layer_idx++)
+        {
+            const auto& layer_diversity = block_diversities_for_all_decoder_layers[layer_idx];
+            const float* data = layer_diversity.data<float>();
+            size_t num_diversity_values = layer_diversity.get_size();
+            OPENVINO_ASSERT(num_diversity_values % m_block_size == 0); // expecting shape of [eviction_size / block_size, eviction_size]
+            m_last_block_diversity[layer_idx].resize(num_diversity_values);
+            for (size_t tok_idx = 0; tok_idx < layer_diversity.get_size(); tok_idx++) {
+                m_last_block_diversity[layer_idx][tok_idx] = data[tok_idx];
+            }
+        }
+    }
+
+    CacheRotationCalculator::CacheRotationCalculator(size_t block_size,
+                                                     size_t max_context_length_in_blocks,
+                                                     size_t kv_head_size,
+                                                     double rope_theta)
+        : m_block_size(block_size),
+          m_head_size(kv_head_size) {
+        // Frequencies follow the original recipe from RoFormer:
+        // https://arxiv.org/pdf/2104.09864v5
+        //
+        // However, the way the rotation coefficients are ultimately applied in Llama and related models from
+        // huggingface is very different from the RoFormer - the embedding-dimension coefficients are not treated as
+        // consecutive x-y coordinate pairs, but are rather divided into contiguous x-like and y-like halves - see
+        // `rotate_half` function in HF transformers. It can be shown that this form still preserves the relative
+        // positioning property from the RoFormer article.
+        OPENVINO_ASSERT(rope_theta > 0, ""rope_theta must be positive"");
+        size_t num_freqs = kv_head_size / 2;
+        m_rope_sin_lut.resize(max_context_length_in_blocks);
+        m_rope_cos_lut.resize(max_context_length_in_blocks);
+
+        for (size_t i = 0; i < max_context_length_in_blocks; i++) {
+            m_rope_sin_lut[i].reserve(num_freqs);
+            m_rope_cos_lut[i].reserve(num_freqs);
+            for (size_t j = 0; j < num_freqs; j++) {"

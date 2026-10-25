@@ -1,0 +1,251 @@
+id,training,inference,sampling,loading,memory,context,quantization,notes
+1,0,0,0,0,0,1,0,KV-cache ubatch construction for coupled sequences
+2,0,0,0,0,1,0,0,one-line delete of TokenizerStream
+3,0,0,0,0,0,0,0,"empty ctor, member init only"
+4,0,0,0,0,1,0,0,device buffer-to-buffer copy
+5,0,0,0,0,0,0,0,3-line hparams setter
+6,0,0,0,1,0,0,0,creates model weight tensors from loader
+7,0,0,0,0,0,0,0,CLI help string formatting
+8,0,0,0,0,0,0,0,integer division helper
+9,0,0,0,0,0,0,0,C-API stats accessor
+10,0,0,0,0,0,0,0,torch op registration table
+11,0,0,0,1,0,0,0,JSON model-config element parse + throw on unknown
+12,0,0,0,0,1,0,0,munlock + free of pinned tensors
+13,0,1,0,0,0,0,0,builds MPT forward-pass graph
+14,0,0,0,0,0,0,0,graph transformation pass registration
+15,0,0,0,0,0,0,0,arch feature-flag predicate
+16,0,1,1,0,0,0,0,top-p/top-k/temp sampling + token update
+17,0,0,0,1,0,0,0,LoRA weight key name mapping
+18,0,0,0,0,0,0,0,defaulted destructor
+19,0,1,0,0,0,0,0,single-query generation entry point
+20,0,0,0,0,0,0,0,returns constant shape
+21,0,0,1,0,0,0,0,temperature scaling / greedy argmax
+22,0,0,0,0,1,0,0,"free iocbs, release io queue"
+23,0,0,0,0,0,1,0,KV-cache sequence stream range validation
+24,0,1,1,0,0,0,0,logits penalties + argmax + topk row select
+25,0,0,0,0,0,0,0,6-line graph input tensor factory
+26,0,0,0,0,0,0,0,repo id to folder name string transform
+27,0,0,0,0,0,0,0,struct ctor with asserts
+28,0,1,0,0,1,0,0,"sets logits, allocates device buffer, copies"
+29,0,1,0,0,0,0,0,transformer block forward pass
+30,0,0,0,0,0,0,0,video decode context init (not model artefact)
+31,0,0,0,0,0,0,0,utf8 lead-byte length
+32,0,0,0,0,0,0,0,backend numeric comparison utility
+33,0,0,0,0,0,0,0,pybind dict type check
+34,0,0,0,1,0,0,0,reads hparams via model loader get_key
+35,0,0,0,0,1,0,0,ring-buffer allocation offset + alignment
+36,1,0,0,0,0,0,0,updates gradient buffer in param registry
+37,0,0,0,0,0,0,0,CLI arg map builder
+38,0,0,0,0,0,0,0,image unfold/im2col preprocessing
+39,0,0,0,0,1,0,0,delete StreamingProcessor
+40,0,0,0,0,0,1,0,rewinds generated sequence length
+41,0,1,0,0,0,0,0,commits token during speculative decoding
+42,0,0,0,0,1,0,0,ORT arena allocator config + registration
+43,0,0,0,0,0,0,0,arg visitor declaration
+44,0,1,0,0,0,0,0,greedy search factory
+45,0,0,0,0,0,0,0,special token id accessor
+46,0,0,0,0,0,0,0,generic activation kernel (aligned with id77/80)
+47,0,0,0,1,0,0,0,sets LoRA adapter alpha tensors
+48,0,0,0,0,0,0,0,integer ceil division
+49,0,1,0,0,0,0,0,stages generation step
+50,0,0,0,0,0,1,0,serializes per-sequence draft state
+51,0,0,1,0,1,0,0,"CUDA batched sampler ctor, curand state alloc"
+52,0,0,0,0,0,1,0,KV state persist/restore index inputs
+53,0,0,0,0,0,0,1,MoE quant-method scale validation dispatch
+54,0,1,0,0,0,1,0,"chunk transition, KV seq removal, prompt rebuild"
+55,0,0,0,0,0,0,0,C-API config string setter
+56,0,0,0,0,0,0,0,string suffix predicate
+57,0,0,0,0,0,0,0,creates infer request from compiled model
+58,0,1,1,0,0,0,0,CUDA beam search scoring
+59,0,0,1,0,0,0,0,grammar-constrained token acceptance
+60,0,1,0,0,0,0,0,chat template formatting for prompt
+61,0,0,0,0,1,0,0,shares OrtValue buffer to avoid realloc
+62,0,0,0,0,0,0,0,empty Synchronize override
+63,0,0,0,0,1,0,0,per-buffer-type memory accounting
+64,0,0,0,1,0,0,0,reads and parses model config file from disk
+65,0,0,0,0,0,0,0,gguf typed value to string helper
+66,0,0,0,0,0,0,0,whitespace escape for tokenizer
+67,0,0,0,0,0,1,0,caps sequence length to model max (context window)
+68,0,1,0,0,0,0,0,model graph factory
+69,0,0,0,0,0,0,0,tensor batch-dim reshape for timestamps
+70,0,0,0,0,0,1,0,KV cache trim/reset
+71,0,0,0,0,0,0,0,CLI argument parsing
+72,0,0,0,0,0,0,0,unsupported-path throw
+73,0,0,0,0,0,0,0,string whitespace trim
+74,0,0,0,0,0,0,0,member-init ctor
+75,0,0,0,1,0,0,0,model field serialization with validation
+76,0,0,0,1,0,0,0,vision model factory dispatch on weight type
+77,0,0,0,0,0,0,0,generic elementwise div kernel
+78,0,0,0,0,0,0,0,member-init ctor
+79,1,0,0,0,0,0,0,NLL/loss computation over logits (perplexity)
+80,0,0,0,0,0,0,0,kernel type dispatch
+81,0,0,0,0,0,0,0,JSON test fixture builder
+82,0,0,0,0,0,0,0,node.js addon object wrapper
+83,0,1,0,0,0,0,0,runs vision encoder inference
+84,0,0,0,0,0,0,0,logger level setter
+85,0,0,0,0,0,0,0,generic file-read helper
+86,0,0,0,0,0,0,0,string suffix predicate
+87,0,1,0,0,0,0,0,DNA k-mer tokenization with OOV fallback
+88,0,0,0,0,0,0,0,4-line LoRA prefix rename
+89,0,0,0,0,0,0,0,unimplemented stub (name contains 'loading')
+90,0,0,0,1,0,0,0,decrypts and loads tokenizer model files
+91,0,0,0,0,0,1,0,chat history first-message accessor
+92,0,0,0,0,0,0,0,SIMD vector arithmetic
+93,0,1,0,0,0,0,0,speculative draft head step
+94,0,0,0,1,0,0,0,creates model weight tensors from loader
+95,0,1,0,0,1,0,0,graph execution + workspace alloc/free
+96,0,0,0,0,0,0,0,accuracy metric (not loss/optimizer)
+97,1,0,0,0,0,0,0,RMS-norm BACKWARD pass kernel
+98,0,0,0,1,0,0,0,model file open + size
+99,0,0,0,0,0,0,0,1-line filename predicate
+100,0,1,0,0,0,1,0,collects prefill inputs across sequence state
+101,0,0,0,0,0,0,0,D3D12 device/adapter setup
+102,0,0,0,0,1,0,0,C-API handle allocation
+103,0,0,0,0,0,0,0,TTS variant settings lookup
+104,0,0,0,0,0,0,0,trie child lookup
+105,0,0,0,0,1,0,0,new mtmd_batch
+106,0,0,0,0,0,0,0,returns container size
+107,0,0,0,0,0,0,0,unimplemented stub
+108,0,0,0,0,0,0,1,Int8/Int4 quant block sizes QK80/QK40
+109,0,0,0,0,1,0,0,free-list CPU allocator
+110,0,0,1,0,0,0,0,repetition penalty on logits
+111,0,0,0,0,0,0,0,hparams field accessor
+112,0,0,0,0,0,0,0,bitmap buffer accessor
+113,0,0,1,0,0,0,0,grammar candidate rejection
+114,0,0,0,0,0,1,0,KV cache sub-context construction
+115,0,0,0,0,0,0,0,member-init ctor
+116,0,0,0,0,0,0,0,nvtx scope string
+117,0,0,0,0,0,1,0,recurrent state croppability query
+118,0,0,0,0,0,1,0,finds KV cache ReadValue nodes
+119,0,0,0,0,0,0,0,attribute struct builder
+120,0,1,0,0,0,1,0,"runs speech encoder, updates cache inputs"
+121,0,0,0,0,1,0,0,gguf context cleanup loop
+122,0,0,0,0,0,0,0,defaulted destructor
+123,1,0,0,0,0,0,0,attention BACKWARD with gradients
+124,0,0,0,0,0,0,0,graph input tensor factory
+125,0,1,0,0,0,0,0,model graph factory
+126,0,1,0,0,0,0,0,vision patch-embedding graph construction
+127,0,0,0,0,1,0,0,per-length device output buffer binding
+128,0,0,0,0,0,0,0,napi config accessor
+129,0,0,0,0,0,1,0,KV cache shift flag across streams
+130,0,0,0,1,0,0,0,parses load mode (mmap/mlock/dio)
+131,0,0,0,0,0,0,0,cparams boolean setter
+132,0,0,1,0,0,0,0,grammar validation for constrained decoding
+133,0,0,0,0,0,1,0,rewinds KV cache and recurrent state
+134,0,1,0,0,0,0,0,attention head batched matmul with nr_past
+135,0,0,0,0,0,0,0,generic kernel type dispatch
+136,0,0,0,0,0,0,0,G2P token scan
+137,0,0,0,0,0,1,0,recurrent cache slot allocation per sequence
+138,0,0,0,0,0,0,0,benchmark statistics printing
+139,0,0,0,0,0,0,0,napi type unwrap
+140,0,0,0,1,0,0,0,deserializes typed fields from blob store
+141,0,0,0,1,0,0,0,config JSON overlay + model data validation
+142,0,0,0,0,0,0,0,audio mel preprocessing
+143,0,0,0,0,1,0,0,wraps host pointer as backend buffer
+144,0,0,0,0,0,0,0,defaulted destructor
+145,0,0,0,0,0,0,0,tensor layout promotion helper
+146,0,0,0,0,0,0,0,GPU command recorder flush
+147,0,0,0,0,0,0,0,"MoE expert routing (topk is experts, NOT tokens)"
+148,0,0,0,0,0,0,0,AIO completion wait
+149,0,0,0,0,0,0,0,string suffix comparison
+150,0,0,0,0,0,0,0,jinja expression parser
+151,0,0,0,0,0,1,0,KV cache eviction score counters
+152,0,0,0,1,0,0,0,applies LoRA adapters to context
+153,0,0,0,1,0,0,0,reads VAD config from genai_config.json
+154,0,0,0,1,0,0,0,initializes pipeline from model path
+155,0,0,0,0,0,0,0,pruning statistics accessor
+156,0,0,0,0,1,0,0,heap-allocated pinned-tensor manager holder
+157,0,0,0,0,0,0,0,async worker callback
+158,0,0,0,0,0,0,0,returns true
+159,0,0,0,0,0,0,0,pybind op registration
+160,0,0,0,0,0,0,0,backend lookup accessor
+161,0,0,0,0,0,0,0,member-init ctor
+162,0,0,0,0,0,0,0,serializes multimodal input chunk
+163,0,0,0,0,0,0,1,fp16 to fp32 precision conversion
+164,0,0,0,0,0,0,0,builds sampler name string
+165,0,0,0,0,0,0,0,HTTP API test client
+166,0,0,0,0,0,0,0,returns counter
+167,0,0,0,0,0,0,0,returns stream handle
+168,0,0,0,0,0,0,0,custom op dispatch
+169,0,0,0,0,1,0,0,graph copy with calloc/hash set allocation
+170,0,1,0,0,0,1,0,chunked context-phase token processing
+171,0,0,0,0,1,0,0,image buffer allocator/deallocator
+172,0,0,0,0,0,0,0,image dimension computation
+173,0,0,0,0,0,0,0,MoE expert output gathering
+174,0,0,0,0,0,0,0,backend event wait forwarder
+175,0,0,0,0,0,0,0,kernel type dispatch
+176,0,1,0,0,0,1,0,causal conv1d graph with conv state cache
+177,0,0,0,0,0,0,1,int4 to half dequantization with scales
+178,0,0,0,0,0,0,0,diffusion scheduler timesteps
+179,0,0,0,0,0,0,0,compile property lookup
+180,0,0,0,0,0,0,0,no-op unmap fragment
+181,0,0,0,0,0,0,0,generic tensor roll
+182,0,0,0,0,0,0,0,scalar sin
+183,0,1,0,0,0,0,0,model graph factory
+184,0,0,0,0,0,1,0,sets KV cache index inputs from ubatch
+185,0,0,0,0,0,1,0,paged KV cache output names
+186,0,1,0,0,0,0,0,embeds token via inference request
+187,0,0,0,0,0,0,0,vision embedding reshape
+188,0,0,0,0,0,0,0,vocab type name accessor
+189,0,0,0,0,0,0,0,utf8 lead byte length
+190,0,0,0,0,0,0,0,distributed communicator setup
+191,0,0,0,0,0,0,1,Q2_K/Q8_K quantized GEMV kernel
+192,0,0,0,0,0,0,0,diffusion noise addition
+193,0,0,0,0,0,0,0,pybind optimizer op registration
+194,0,0,0,0,0,0,0,string case predicate
+195,0,0,0,0,0,0,0,returns empty map
+196,0,0,0,0,1,0,0,max allocation size across buffer types
+197,0,0,0,0,0,0,0,PEG grammar rule builder
+198,0,0,0,0,0,0,0,registry map lookup
+199,0,0,0,1,0,0,0,aliases FFN weight module tree
+200,0,0,0,0,0,1,0,builds position ids from vision grids
+201,0,0,0,0,0,0,0,macro-generated module methods
+202,0,1,0,0,0,0,0,sets vision pipeline inputs for generation
+203,0,0,0,0,0,1,0,builds KQ mask from KV context
+204,0,0,0,1,0,0,0,reads arch hparams from model loader
+205,0,0,0,0,0,1,0,reads tensor during session state restore
+206,0,0,0,0,0,0,0,image refine size computation
+207,0,1,0,0,0,0,0,linear layer forward
+208,0,1,0,0,0,0,0,gemma4 forward graph construction
+209,0,0,0,0,0,0,0,tensor 2D view slice
+210,0,1,0,0,0,0,0,attention graph node construction
+211,0,0,0,0,1,0,0,tensor buffer memset
+212,0,1,0,0,0,0,0,speculative draft/target context setup
+213,0,0,0,0,0,0,0,debug span dump forwarder
+214,0,0,0,0,0,0,0,chat template flag setter
+215,0,0,0,0,0,0,0,config map extraction
+216,0,0,0,0,0,1,0,KV cache sequence division
+217,0,1,0,0,0,0,0,builds image patch token sequence
+218,0,0,0,0,0,0,0,HF cache dir env resolution
+219,0,0,0,1,0,0,0,JSON config int-array element
+220,0,0,0,0,0,0,0,mel spectrogram tensor build
+221,0,0,0,0,0,0,0,PEG json-null rule
+222,0,0,0,0,0,0,0,G2P linguistic context (NOT LLM context)
+223,0,0,0,0,0,0,0,mmap size accessor (name trap)
+224,0,0,0,0,0,0,1,Q4_K/Q8_K quantized GEMV kernel
+225,0,0,0,0,0,0,0,registry refcount increment
+226,0,0,0,0,0,0,0,empty synchronize
+227,0,0,0,0,0,0,0,returns device type enum
+228,0,0,0,0,0,1,0,clears chat session per-image token state
+229,0,0,0,0,0,0,0,vision feature reshape
+230,0,0,0,1,0,0,0,JSON config element for MTP inputs
+231,0,0,0,0,0,1,0,computes session state size
+232,0,0,0,0,0,0,0,returns version constant
+233,0,0,0,0,0,0,0,greedy sampler clone (no-op body)
+234,0,0,0,0,0,0,1,16-bit float to fp32 bit conversion
+235,0,0,0,0,1,0,0,writes into tensor buffer
+236,0,0,0,0,0,0,0,string trim
+237,0,1,0,0,0,1,0,copies sequence_length/finished after batch step
+238,0,0,0,0,0,0,0,fatal signal handler
+239,0,0,0,0,0,0,0,map count accessor
+240,0,0,0,0,0,0,0,CLI arg parsing
+241,0,0,0,0,0,1,0,KV cache context construction
+242,0,0,0,1,0,0,0,LoRA merge into gguf
+243,0,0,0,0,0,0,0,distributed all-reduce chunking
+244,0,0,0,0,0,0,0,run option setter
+245,0,0,0,0,0,0,0,performance metric printing
+246,0,0,0,0,1,0,0,I/O span batching with size limits
+247,0,0,0,0,0,0,0,vocab type accessor (name trap)
+248,0,0,0,0,0,1,0,KV cache eviction size computation
+249,0,1,0,0,0,0,0,batched benchmark driving prefill+generation
+250,0,1,1,0,0,0,0,beam search factory
