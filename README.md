@@ -1,4 +1,4 @@
-# KaizenTracer
+# Package
 
 Static AST + CFG feature extraction for C++ local LLM repositories, and the
 analysis that produces the paper's tables and figures.
